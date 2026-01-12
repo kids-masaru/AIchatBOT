@@ -44,16 +44,24 @@ class MakerAgent:
         - search_drive(query): ファイルを検索します。
         - read_drive_file(file_id): ファイルの中身（テキスト）を読み込みます。
         - create_google_doc(title, content): Googleドキュメントを作成します。
+        - create_drive_folder(folder_name): 新しいフォルダを作成します。
+        - move_drive_file(file_id, folder_id): ファイルを移動します。
         
-        【プロセス】
+        【プロセス: ドキュメント作成】
         1. 必要な情報が足りない場合は、まず `search_drive` で関連資料を探してください。
         2. 見つかった資料の `file_id` を使って `read_drive_file` で内容を確認してください。
         3. 集めた情報を整理・要約し、ユーザーの依頼に沿ったドキュメントを作成してください。
-        4. 作成が完了したら、その旨とドキュメントのURLを報告してください。
+        
+        【プロセス: フォルダ整理】
+        1. `search_drive` で整理対象のファイルを洗い出します。
+        2. 重複かどうか判断するため、必要に応じて `read_drive_file` で中身を確認します（同名でも中身が違う場合があるため）。
+        3. 必要なら `create_drive_folder` で整理用フォルダ（例:「重複」）を作成します。
+        4. `move_drive_file` でファイルを移動します。
+        5. **重要:** 最後に「何というファイルを、どこのフォルダに移動したか」を具体的に報告してください。
         
         【注意】
         - 嘘の情報（ハルシネーション）を書かないでください。ドライブにない情報は「不明」としてください。
-        - ファイルを作成する際は、適切なタイトルを付けてください。
+        - ファイルを作成・移動する際は、必ず実行結果を確認してください。
         """)
         
         # Start a chat session with the system instruction

@@ -6,11 +6,15 @@ import urllib.request
 import sys
 
 try:
-    from duckduckgo_search import DDGS
+    try:
+        from duckduckgo_search import DDGS
+    except ImportError:
+        # Try newer package name
+        from ddgs import DDGS
     SEARCH_AVAILABLE = True
 except ImportError:
     SEARCH_AVAILABLE = False
-    print("duckduckgo-search not available", file=sys.stderr)
+    print("duckduckgo-search (ddgs) not available", file=sys.stderr)
 
 
 
@@ -80,16 +84,24 @@ def google_web_search(query, num_results=3):
         import warnings
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            with DDGS(timeout=10) as ddgs:
-                # 1. Try 'text' backend with JP region and 'html' backend (more robust)
+            # Create DDGS instance (context manager is safer)
+            with DDGS(timeout=15) as ddgs:
+                # 1. Try 'html' backend for JP
                 try:
-                    # 'lite' or 'html' backend is often better for server IPs
                     results = list(ddgs.text(query, region='jp-jp', max_results=num_results, backend='html'))
                 except Exception as e:
                     print(f"DDG JP Search Error: {e}", file=sys.stderr)
                     results = []
                 
-                # 2. If no results, try Global region
+                # 2. If empty, try 'lite' backend (less blocked)
+                if not results:
+                     try:
+                        print("JP empty, retrying with lite backend...", file=sys.stderr)
+                        results = list(ddgs.text(query, region='jp-jp', max_results=num_results, backend='lite'))
+                     except Exception as e:
+                        print(f"DDG Lite Error: {e}", file=sys.stderr)
+
+                # 3. If still empty, try global
                 if not results:
                     try:
                         print("JP search empty, trying global...", file=sys.stderr)
