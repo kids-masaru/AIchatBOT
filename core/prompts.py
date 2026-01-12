@@ -198,6 +198,7 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "folder_name": {"type": "string", "description": "作成するフォルダの名前"}
+            },
             "required": ["folder_name"]
         }
     },
