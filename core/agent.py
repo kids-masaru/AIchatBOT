@@ -317,7 +317,11 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
     
     # Current Date/Time context (CRITICAL for model awareness)
     import datetime
-    now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S (%A)')
+    # Fix: Force JST Timezone (UTC+9)
+    utc_now = datetime.datetime.now(datetime.timezone.utc) if datetime.datetime.now().tzinfo else datetime.datetime.now().astimezone(datetime.timezone.utc)
+    jst_offset = datetime.timedelta(hours=9)
+    jst_now = utc_now + jst_offset
+    now_str = jst_now.strftime('%Y-%m-%d %H:%M:%S (%A)')
     time_context = f"\n【★現在日時★】\n本日は {now_str} です。ユーザーから「今日」「明日」と言われたらこの日付を基準にしてください。\n"
 
     # Combine prompts with RAG and Profile context
