@@ -265,9 +265,9 @@ def save_user_profile(user_id: str, profile_data: Dict) -> bool:
         # Serialize profile to JSON string
         json_str = json.dumps(profile_data, ensure_ascii=False)
         
-        # Use a dummy vector (all zeros) since we only care about metadata for this item
-        # But Pinecone requires a vector.
-        dummy_vector = [0.0] * DIMENSION
+        # Use a dummy vector (all 0.1s to avoid "all integers zero" validation error)
+        # Pinecone requires a vector, and it must not be all zeros in some metric configs.
+        dummy_vector = [0.1] * DIMENSION
         
         # Upsert
         index.upsert(vectors=[(

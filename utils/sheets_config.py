@@ -115,6 +115,7 @@ def load_config():
             config = json.loads(config_json)
             # Merge with defaults to handle missing keys
             merged = {**DEFAULT_CONFIG, **config}
+            print(f"Config loaded from sheet {_config_sheet_id}", file=sys.stderr)
             return merged
         else:
             return DEFAULT_CONFIG

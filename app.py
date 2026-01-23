@@ -332,11 +332,8 @@ def webhook():
     return 'OK', 200
 
 # Initialize Scheduler
-from apscheduler.schedulers.background import BackgroundScheduler
-import atexit
-
 def check_reminders():
-    """Scheduled job to check and send reminders"""
+    """Scheduled job to check and send reminders (Manual Trigger Only)"""
     # Use existing cron logic but internalize the context
     with app.app_context():
         try:
@@ -372,27 +369,31 @@ def process_user_reminders(user):
     jst = timezone(timedelta(hours=9))
     now = datetime.now(jst)
     current_hour = now.hour
-    current_minute = now.minute
     
     for reminder in reminders:
         if not reminder.get('enabled', True): continue
         
-        # Simple hour checks for now (can enhance to minute level)
         r_time = reminder.get('time', '07:00')
         try:
             r_hour = int(r_time.split(':')[0])
         except:
             r_hour = 7
             
-        if r_hour != current_hour: continue
-        
-        # Prevent double sending if checked multiple times in same hour?
-        # For now, scheduler runs hourly so it should be fine.
+        # [Modified] Allow execution if within the hour (Scheduler guarantees hourly execution)
+        if r_hour != current_hour:
+             continue
         
         send_reminder(user_id, location, reminder)
 
 def send_reminder(user_id, location, reminder):
+    from datetime import datetime, timezone, timedelta
+    jst = timezone(timedelta(hours=9))
+    now = datetime.now(jst)
+    today_str = now.strftime('%Y年%m月%d日')
+    
+    # [Modified] Inject Today's Date (JST) into prompt to prevent "Yesterday" issue
     prompt = (
+        f"現在は日本時間の {today_str} です。\n"
         f"今日の{location}の{reminder.get('prompt')}\n"
         "【重要】以下の3つのセクションに分けて、それぞれの間に「@@@」という区切り文字を入れて出力してください。\n"
         "1. 天気に関する情報\n"
@@ -405,9 +406,7 @@ def send_reminder(user_id, location, reminder):
         messages = [msg.strip() for msg in response.split('@@@') if msg.strip()]
         
         # Add greeting
-        from datetime import datetime, timezone, timedelta
-        jst = timezone(timedelta(hours=9))
-        h = datetime.now(jst).hour
+        h = now.hour
         if messages:
             if h < 12 and "おはよう" not in messages[0]:
                 messages[0] = f"おはようございます！☀️\n\n{messages[0]}"
@@ -423,10 +422,7 @@ def send_reminder(user_id, location, reminder):
 
 
 # Start Scheduler
-scheduler = BackgroundScheduler()
-scheduler.add_job(func=check_reminders, trigger="cron", hour="*", minute=0) # Run every hour on the hour
-
-# Profiler Job (Run daily at 3 AM JST = 18:00 UTC)
+# Profiler Job (Manual Trigger Only)
 def run_profiler():
     """Run profiler for all active users"""
     with app.app_context():
@@ -445,10 +441,8 @@ def run_profiler():
         except Exception as e:
             print(f"Profiler Job Error: {e}", file=sys.stderr)
 
-scheduler.add_job(func=run_profiler, trigger="cron", hour=18) # 18:00 UTC = 03:00 JST
-
-scheduler.start()
-atexit.register(lambda: scheduler.shutdown())
+# Scheduler removed
+# scheduler = BackgroundScheduler() ...
 
 
 @app.route('/cron', methods=['GET'])
