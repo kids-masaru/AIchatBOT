@@ -90,7 +90,8 @@ class ProfilerAgent:
         from utils.sheets_config import load_config
         config = load_config()
         
-        system_prompt = config.get('profiler_prompt', """
+        # [Config Update] Use shiori_instruction
+        system_prompt = config.get('shiori_instruction', """
         あなたは「栞（しおり）」という名の、心優しい伝記作家です。
         対象人物（ユーザー）の会話記録（Log）を読み、現在の人物プロファイル（Profile）を更新してください。
         

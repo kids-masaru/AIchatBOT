@@ -341,10 +341,11 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
     config = load_config()
     
     # Construct System Prompt
-    personality = config.get("personality", "明るくて元気なAI秘書")
-    master_prompt = config.get("master_prompt", "")
+    # [Config Update] Use koto_personality / koto_master_prompt
+    personality = config.get("koto_personality") or config.get("personality", "明るくて元気なAI秘書")
+    master_prompt = config.get("koto_master_prompt") or config.get("master_prompt", "")
     
-    personality_section = f"\n【設定された人格・役割】\n{personality}\n"
+    personality_section = f"\n【設定された人格・役割（KOTO）】\n{personality}\n"
     master_prompt_section = f"\n【マスタープロンプト（特別指示）】\n{master_prompt}\n" if master_prompt else ""
     
     # Current Date/Time context (CRITICAL for model awareness)

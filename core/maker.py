@@ -36,7 +36,9 @@ class MakerAgent:
         
         config = load_config()
         # Allow user to customize the persona via config
-        system_instruction = config.get('maker_prompt', """
+        # Allow user to customize the persona via config
+        # [Config Update] Use fumi_instruction
+        system_instruction = config.get('fumi_instruction', """
         あなたは「フミ (Fumi)」です。資料作成の専門家として振る舞ってください。
         ユーザーの依頼に基づき、Google Drive内の情報を調査し、高品質なドキュメントを作成します。
         
