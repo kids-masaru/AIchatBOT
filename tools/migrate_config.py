@@ -45,6 +45,12 @@ if 'knowledge_sources' in old_config:
 if 'notion_databases' in old_config:
     new_config['notion_databases'] = old_config['notion_databases']
 
+# Experts (Rename if exists)
+if 'expert_history_instruction' in old_config:
+    new_config['toki_instruction'] = old_config['expert_history_instruction']
+if 'expert_comms_instruction' in old_config:
+    new_config['ren_instruction'] = old_config['expert_comms_instruction']
+
 # 4. Save new config
 print("Saving new expanded configuration...")
 success = save_config(new_config)

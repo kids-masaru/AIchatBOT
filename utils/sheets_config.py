@@ -51,11 +51,11 @@ DEFAULT_CONFIG = {
     ユーザーのカレンダーとタスクを分析し、最適なスケジューリングを提案してください。
     """,
 
-    # --- 6. HISTORY EXPERT (Context Analyzer) ---
-    "expert_history_instruction": "過去の大量のログから文脈を読み解く専門家としての指示。",
+    # --- 6. TOKI (History Expert - The Historian) ---
+    "toki_instruction": "過去の大量のログから文脈を読み解く専門家「トキ」としての指示。",
 
-    # --- 7. COMMS EXPERT (Email/Line) ---
-    "expert_comms_instruction": "メールやメッセージのドラフト作成、返信推奨を行う専門家としての指示。",
+    # --- 7. REN (Comms Expert - The Communicator) ---
+    "ren_instruction": "メールやメッセージのドラフト作成、返信推奨を行う専門家「レン」としての指示。",
 
     # --- Resources ---
     "knowledge_sources": [],
