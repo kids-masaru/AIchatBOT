@@ -7,33 +7,34 @@ import json
 import sys
 from datetime import datetime
 from typing import Dict, List, Optional
-import google.generativeai as genai
-# Note: The user log says "support ended", suggesting a very new version or warning.
-# However, for now we stick to what works in `agent.py` or just suppress warning.
-# Actually, the error `Expecting value` was main crash. 
-# We'll just keep `google.generativeai` but with better error handling as applied.
-# Wait, I should synchronize with agent.py if possible. 
-# agent.py imports: `from core.agent import get_gemini_response` (in app.py)
-# agent.py uses `genai` from `google.generativeai`.
-# So let's double check if I need to change import. 
-# The log warning says "Please switch to `google.genai` package".
-# For now, I'll ignore the warning and rely on logic fix. 
+from google import genai
 from utils.vector_store import _get_index, GeminiEmbedder
 
 # Configure Gemini
 api_key = os.environ.get("GEMINI_API_KEY")
-if api_key:
-    genai.configure(api_key=api_key)
+# Note: google.genai Client handles config internally per instance usually.
 
 PROFILE_FILE = "user_profile_data.json"
 
 class ProfilerAgent:
     def __init__(self):
-        self.model = genai.GenerativeModel('gemini-2.0-flash-exp') # Use a smart model for analysis
+        # User requested 'gemini-3-flash-preview'.
+        # We use the new google-genai SDK Client.
+        if not api_key:
+            print("Profiler Error: GEMINI_API_KEY not found.", file=sys.stderr)
+            self.client = None
+        else:
+            self.client = genai.Client(api_key=api_key)
+            
+        self.model_name = 'gemini-3-flash-preview'
         
     def run_analysis(self, user_id: str, days_back: int = 1) -> Dict:
         """Analyze recent conversations and update profile"""
-        print(f"Profiler: Starting analysis for {user_id}...", file=sys.stderr)
+        if not self.client:
+             print("Profiler Error: Client not initialized.", file=sys.stderr)
+             return {}
+
+        print(f"Profiler: Starting analysis for {user_id} using {self.model_name}...", file=sys.stderr)
         
         # 1. Fetch recent conversations from Pinecone
         recent_logs = self._fetch_recent_logs(user_id, days_back)
@@ -54,47 +55,30 @@ class ProfilerAgent:
         return updated_profile
 
     def _fetch_recent_logs(self, user_id: str, days: int) -> List[str]:
-        """Fetch logs from vector store (mock implementation for creating the logic first)"""
-        # Note: Vector stores are optimized for semantic search, not time-based range queries usually.
-        # Ideally, we should fetch by metadata filter. 
-        # For Pinecone, we can filter by timestamp if stored as metadata number (not string).
-        # Since we stored timestamp as string ISO, range query is hard.
-        # Strategy: Fetch last N items or use a separate "recent_logs" buffer in Redis/File.
-        
-        # FOR NOW: Let's assume we fetch relevant memory summaries via vector search 
-        # on generic "personality" keywords to see what's new.
-        # OR better: The "Profiler" should ideally have access to raw logs.
-        # Since we are using Pinecone only, let's query for "私のこと" (About me) related topics.
-        
-        index = _get_index()
-        if not index: return []
-        
-        embedder = GeminiEmbedder()
-        # Use a safe query text. If empty, Pinecone errors.
-        query_text = "私について 好き 嫌い 考え 価値観"
-        vector = embedder.embed_text(query_text)
-        
-        # Check if vector is valid (non-zero) - though embed_text usually handles this.
-        # But if embedder fails, it might return None or list of zeros?
-        if not vector or all(v == 0 for v in vector):
-            print("Profiler Warning: Generated zero vector for query.", file=sys.stderr)
+        """Fetch logs from local storage (Short-term memory approach)"""
+        # The vector store approach is good for long-term recall, 
+        # but for daily profiling, we want the raw recent conversation.
+        try:
+            from utils.storage import get_user_history
+            history = get_user_history(user_id)
+            
+            # Extract only user messages
+            # Note: history.json only keeps MAX_HISTORY (10). 
+            # This is actually perfect for "daily update" as it processes what's active.
+            logs = []
+            for msg in history:
+                if msg.get('role') == 'user':
+                    logs.append(msg.get('text', ''))
+            
+            if not logs:
+                # If local history is empty, maybe fallback to Pinecone?
+                # But if local is empty, user hasn't talked recently.
+                return []
+                
+            return logs
+        except Exception as e:
+            print(f"Profiler Log Fetch Error: {e}", file=sys.stderr)
             return []
-        
-        results = index.query(
-            vector=vector,
-            top_k=50, # Get plenty
-            filter={"user_id": user_id},
-            include_metadata=True
-        )
-        
-        logs = []
-        for match in results.matches:
-             if match.metadata and match.metadata.get('role') == 'user':
-                 text = match.metadata.get('text', '')
-                 # TODO: Filter strictly by date here if possible in python
-                 logs.append(text)
-                 
-        return logs
 
     def _analyze_and_merge(self, current_profile: Dict, logs: List[str]) -> Dict:
         """Ask Gemini to update the profile based on new logs"""
@@ -137,8 +121,13 @@ class ProfilerAgent:
         """
         
         try:
-            response = self.model.generate_content(prompt)
+            # Use new SDK method
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt
+            )
             text = response.text.strip()
+            
             # Clean up markdown code blocks if present
             if "```json" in text:
                 import re

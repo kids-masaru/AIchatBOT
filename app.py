@@ -353,23 +353,20 @@ def process_user_reminders(user):
     user_id = user['user_id']
     location = user['location']
     
-    auth_config = load_config() # Ideally load user-specific config
+    auth_config = load_config()
     reminders = auth_config.get('reminders', [])
     
-    # Fallback for old format
-    if not reminders and auth_config.get('reminder_time'):
-         reminders = [{
-            'name': '朝のリマインダー',
-            'time': auth_config.get('reminder_time', '07:00'),
-            'prompt': auth_config.get('reminder_prompt', '今日の天気と予定を教えて'),
-            'enabled': True
-        }]
-
+    # Clean up fallback: Only use fallback if reminders is strictly None or empty,
+    # AND we have legacy config values we want to honor.
+    # But ideally we trust the list. If list is empty, it means no reminders.
+    
     from datetime import datetime, timezone, timedelta
     jst = timezone(timedelta(hours=9))
     now = datetime.now(jst)
     current_hour = now.hour
     
+    print(f"Checking reminders for {user_id[:8]} at {current_hour}:00", file=sys.stderr)
+
     for reminder in reminders:
         if not reminder.get('enabled', True): continue
         
@@ -379,7 +376,7 @@ def process_user_reminders(user):
         except:
             r_hour = 7
             
-        # [Modified] Allow execution if within the hour (Scheduler guarantees hourly execution)
+        # Match current hour
         if r_hour != current_hour:
              continue
         
@@ -448,14 +445,41 @@ def run_profiler():
 @app.route('/cron', methods=['GET'])
 def cron_job():
     """Manual trigger for reminders (Legacy/Debug)"""
-    check_reminders()
-    return 'Reminders checked manually', 200
+    # 1. Check Reminders
+    try:
+        check_reminders()
+    except Exception as e:
+        print(f"Cron Reminder Error: {e}", file=sys.stderr)
+        
+    # 2. Run Profiler (Update User Profile)
+    try:
+        # Run profiler if it's 07:00, 12:00, 18:00, or just run every hour?
+        # Profiling is expensive (Gemini call). Let's run it every hour but maybe logic inside limits it?
+        # For now, let's run it. The profiler logic itself (in profiler.py) checks if there are new logs ideally.
+        # But our current profiler just runs. Let's run it.
+        run_profiler()
+    except Exception as e:
+        print(f"Cron Profiler Error: {e}", file=sys.stderr)
+
+    return 'Cron job executed', 200
 
 @app.route('/debug/run-profiler', methods=['POST'])
 def debug_run_profiler():
     """Manual trigger for profiler"""
     run_profiler()
-    return 'Profiler triggered', 200
+    return 'Profiler executed', 200
+
+@app.route('/debug/ingest', methods=['GET', 'POST'])
+def debug_ingest():
+    """Manual trigger for knowledge ingestion (Librarian)"""
+    try:
+        from tools.ingest_knowledge import run_ingestion
+        # Note: This might timeout on Vercel if many files. 
+        # Ideally should be async or limited batch.
+        run_ingestion()
+        return 'Ingestion started/completed', 200
+    except Exception as e:
+        return f'Ingestion failed: {e}', 500
 
 
 @app.route('/api/config', methods=['GET', 'POST', 'OPTIONS'])

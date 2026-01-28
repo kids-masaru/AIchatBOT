@@ -284,3 +284,53 @@ def save_user_profile(user_id: str, profile_data: Dict) -> bool:
     except Exception as e:
         print(f"Error saving profile: {e}", file=sys.stderr)
         return False
+
+# --- Knowledge Retrieval (Phase 6 - RAG) ---
+
+def save_knowledge_vector(doc_id: str, text: str, metadata: Dict) -> bool:
+    """Save knowledge document chunk to Pinecone (namespace='knowledge')"""
+    index = _get_index()
+    if index is None: return False
+    
+    try:
+        embedder = GeminiEmbedder()
+        vector = embedder.embed_text(text)
+        
+        # Upsert to 'knowledge' namespace
+        index.upsert(
+            vectors=[(doc_id, vector, metadata)], 
+            namespace="knowledge"
+        )
+        return True
+    except Exception as e:
+        print(f"Error saving knowledge: {e}", file=sys.stderr)
+        return False
+
+def search_knowledge_base(query: str, n_results: int = 5) -> List[Dict]:
+    """Search knowledge base (namespace='knowledge')"""
+    index = _get_index()
+    if index is None: return []
+    
+    try:
+        embedder = GeminiEmbedder()
+        vector = embedder.embed_text(query)
+        
+        results = index.query(
+            vector=vector,
+            top_k=n_results,
+            namespace="knowledge",
+            include_metadata=True
+        )
+        
+        hits = []
+        for match in results.matches:
+            if match.score > 0.5: # Relevance threshold
+                hits.append({
+                    "text": match.metadata.get("text", ""),
+                    "source": match.metadata.get("source", "unknown"),
+                    "score": match.score
+                })
+        return hits
+    except Exception as e:
+        print(f"Error searching knowledge: {e}", file=sys.stderr)
+        return []

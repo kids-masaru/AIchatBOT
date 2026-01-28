@@ -6,7 +6,7 @@ import sys
 import json
 import urllib.request
 
-from core.prompts import SYSTEM_PROMPT, TOOLS
+from core.prompts import BASE_SYSTEM_PROMPT, TOOLS
 from utils.storage import get_user_history, add_message
 
 # Gemini API
@@ -261,14 +261,32 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
     except:
         config = {}
     
-    # Build knowledge context
+    # Build knowledge context and perform search
+    knowledge_sources = config.get("knowledge_sources", [])
     knowledge_context = ""
-    knowledge_sources = config.get('knowledge_sources', [])
-    if knowledge_sources:
-        knowledge_context = "\n\n【★ナレッジフォルダ★】\n以下のフォルダがナレッジベースとして設定されています。ユーザーの質問に関連するフォルダがあれば、search_driveでそのフォルダ内を検索してください。\n"
-        for ks in knowledge_sources:
-            knowledge_context += f"- フォルダ名: {ks.get('name', '不明')} (ID: {ks.get('id', '')}) → {ks.get('instruction', '関連する質問に答える')}\n"
     
+    if knowledge_sources:
+        # 1. Search Knowledge Base
+        from utils.vector_store import search_knowledge_base
+        print(f"Searching knowledge base for: {user_message}", file=sys.stderr)
+        hits = search_knowledge_base(user_message, n_results=3)
+        
+        # 2. Add Hits to Context
+        if hits:
+            knowledge_context = "\n【★参照資料（RAG検索結果）★】\nユーザーの質問に関連する資料が見つかりました。回答の参考にしてください。\n"
+            for hit in hits:
+                source = hit.get('source', '不明')
+                text = hit.get('text', '')
+                knowledge_context += f"---\n出典: {source}\n内容: {text[:300]}...\n"
+            knowledge_context += "---\n(資料の内容に基づいて回答する場合は、「〜という資料によると」と出典を明示してください)\n"
+        else:
+            # Fallback: List folders if no direct hits (so Agent knows it *can* search if it wants to dig deeper manually? 
+            # Actually Agent can't "dig deeper" manually easily without tool. 
+            # But earlier we listed folders. Let's keep listing folders if no hits, or always list folders?)
+            # Let's Always list folders as "Available Resources" just in case.
+            source_list = ", ".join([s.get('name', 'Unknown') for s in knowledge_sources])
+            knowledge_context += f"\n【参照可能な知識データ】\n設定されたフォルダ: {source_list}\n(※今回の検索では直接関連する記述は見つかりませんでした)\n"
+
     # Get master prompt if set
     master_prompt = config.get('master_prompt', '')
     master_prompt_section = ""
@@ -314,18 +332,41 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
         save_conversation(user_id, "user", user_message)
     except Exception as e:
         print(f"RAG context error: {e}", file=sys.stderr)
-    
     # Current Date/Time context (CRITICAL for model awareness)
     import datetime
     # Fix: Force JST Timezone (UTC+9)
     utc_now = datetime.datetime.now(datetime.timezone.utc) if datetime.datetime.now().tzinfo else datetime.datetime.now().astimezone(datetime.timezone.utc)
-    jst_offset = datetime.timedelta(hours=9)
-    jst_now = utc_now + jst_offset
-    now_str = jst_now.strftime('%Y-%m-%d %H:%M:%S (%A)')
+    # Load configuration
+    from utils.sheets_config import load_config
+    config = load_config()
+    
+    # Construct System Prompt
+    personality = config.get("personality", "明るくて元気なAI秘書")
+    master_prompt = config.get("master_prompt", "")
+    
+    personality_section = f"\n【設定された人格・役割】\n{personality}\n"
+    master_prompt_section = f"\n【マスタープロンプト（特別指示）】\n{master_prompt}\n" if master_prompt else ""
+    
+    # Current Date/Time context (CRITICAL for model awareness)
+    now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S (%A)')
     time_context = f"\n【★現在日時★】\n本日は {now_str} です。ユーザーから「今日」「明日」と言われたらこの日付を基準にしてください。\n"
 
-    # Combine prompts with RAG and Profile context
-    full_system_prompt = SYSTEM_PROMPT + time_context + personality_section + profile_section + user_name_section + knowledge_context + master_prompt_section + rag_context
+    # User Context (Profile)
+    from utils.vector_store import get_user_profile
+    user_data = get_user_profile(user_id)
+    profile_text = user_data.get('profile', '')
+    profile_section = f"\n【ユーザープロファイル（過去の分析結果）】\n{profile_text}\n" if profile_text else ""
+    
+    user_name = config.get('user_name', 'ユーザー')
+    user_name_section = f"\n【ユーザーの名前】\n{user_name}さん\n"
+
+    # Knowledge / RAG Context
+    knowledge_context = ""
+    # RAG lookup removed for simplification phase, can be re-enabled
+    
+    # Assemble Full Prompt
+    # BASE_SYSTEM_PROMPT (Rules) + Time + Personality + Profile + User Name + Master Prompt
+    full_system_prompt = BASE_SYSTEM_PROMPT + time_context + personality_section + profile_section + user_name_section + master_prompt_section + knowledge_context
     
     # Build conversation contents
     contents = [] # Initialize properly

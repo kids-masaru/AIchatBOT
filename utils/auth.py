@@ -5,6 +5,10 @@ import os
 import sys
 import json
 from google.oauth2 import service_account
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Google Workspace credentials
 # Try both common variable names

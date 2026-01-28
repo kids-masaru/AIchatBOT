@@ -648,8 +648,8 @@ def read_drive_file(file_id: str):
             for page in doc:
                 content += page.get_text() + "\n"
                 
-        elif mime_type == 'text/plain':
-            # Download Text file
+        elif mime_type == 'text/plain' or mime_type == 'application/json':
+            # Download Text or JSON file
             request = drive_service.files().get_media(fileId=file_id)
             fh = io.BytesIO()
             downloader = MediaIoBaseDownload(fh, request)
