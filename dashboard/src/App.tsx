@@ -49,8 +49,8 @@ interface Config {
   fumi_instruction: string;
   aki_instruction: string;
   rina_instruction: string;
-  expert_history_instruction: string;
-  expert_comms_instruction: string;
+  toki_instruction: string;
+  ren_instruction: string;
 
   knowledge_sources: KnowledgeSource[];
   reminders: Reminder[];
@@ -72,8 +72,8 @@ function App() {
     fumi_instruction: '',
     aki_instruction: '',
     rina_instruction: '',
-    expert_history_instruction: '',
-    expert_comms_instruction: '',
+    toki_instruction: '',
+    ren_instruction: '',
     knowledge_sources: [],
     reminders: [],
     notion_databases: []
@@ -96,6 +96,10 @@ function App() {
       // Agent prompt mappings
       if (!data.shiori_instruction && data.profiler_prompt) data.shiori_instruction = data.profiler_prompt;
       if (!data.fumi_instruction && data.maker_prompt) data.fumi_instruction = data.maker_prompt;
+
+      // Expert mappings fallback
+      if (!data.toki_instruction && data.expert_history_instruction) data.toki_instruction = data.expert_history_instruction;
+      if (!data.ren_instruction && data.expert_comms_instruction) data.ren_instruction = data.expert_comms_instruction;
 
       // Ensure arrays
       if (!data.knowledge_sources) data.knowledge_sources = [];
@@ -219,24 +223,32 @@ function App() {
         />
       </div>
 
-      {/* EXPERTS */}
+      {/* EXPERTS (TOKI & REN) */}
       <div className="border-t border-gray-100 pt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <label className="block text-xs font-bold text-gray-500 uppercase mb-2">History Expert</label>
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
+            <label className="text-xs font-bold text-gray-700 uppercase">TOKI (Historian)</label>
+          </div>
           <textarea
-            value={config.expert_history_instruction || ''}
-            onChange={e => setConfig({ ...config, expert_history_instruction: e.target.value })}
+            value={config.toki_instruction || ''}
+            onChange={e => setConfig({ ...config, toki_instruction: e.target.value })}
             className="w-full px-4 py-3 bg-gray-50 border border-transparent focus:bg-white focus:border-indigo-500 rounded-lg text-sm font-medium transition-all outline-none resize-none"
             rows={4}
+            placeholder="トキさんへの指示（過去ログ分析の視点）"
           />
         </div>
         <div>
-          <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Comms Expert</label>
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-2 h-2 bg-teal-500 rounded-full"></div>
+            <label className="text-xs font-bold text-gray-700 uppercase">REN (Communicator)</label>
+          </div>
           <textarea
-            value={config.expert_comms_instruction || ''}
-            onChange={e => setConfig({ ...config, expert_comms_instruction: e.target.value })}
+            value={config.ren_instruction || ''}
+            onChange={e => setConfig({ ...config, ren_instruction: e.target.value })}
             className="w-full px-4 py-3 bg-gray-50 border border-transparent focus:bg-white focus:border-indigo-500 rounded-lg text-sm font-medium transition-all outline-none resize-none"
             rows={4}
+            placeholder="レンさんへの指示（広報・連絡のトーン）"
           />
         </div>
       </div>
