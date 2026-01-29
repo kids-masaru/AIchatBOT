@@ -98,7 +98,10 @@ def get_or_create_config_sheet():
         # Search for existing config sheet
         query = f"name = '{CONFIG_SHEET_NAME}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false"
         if folder_id:
+            print(f"DEBUG: Searching for config in Shared Folder: {folder_id}", file=sys.stdout)
             query += f" and '{folder_id}' in parents"
+        else:
+            print(f"WARNING: No GOOGLE_DRIVE_FOLDER_ID found. Searching globally.", file=sys.stdout)
             
         results = drive_service.files().list(
             q=query,
@@ -112,7 +115,7 @@ def get_or_create_config_sheet():
         
         if files:
             _config_sheet_id = files[0]['id']
-            print(f"Found existing config sheet: {_config_sheet_id}", file=sys.stderr)
+            print(f"DEBUG: Found existing config sheet: {_config_sheet_id} (Name: {files[0]['name']})", file=sys.stdout)
             return _config_sheet_id
         
         # Create new spreadsheet
@@ -138,7 +141,9 @@ def get_or_create_config_sheet():
         return _config_sheet_id
         
     except Exception as e:
-        print(f"Error in get_or_create_config_sheet: {e}", file=sys.stderr)
+        print(f"CRITICAL ERROR in get_or_create_config_sheet: {e}", file=sys.stdout)
+        import traceback
+        traceback.print_exc()
         return None
 
 def load_config():
@@ -165,14 +170,16 @@ def load_config():
             config_json = values[0][0]
             config = json.loads(config_json)
             # Merge with defaults to handle missing keys
+            # Merge with defaults to handle missing keys
             merged = {**DEFAULT_CONFIG, **config}
-            print(f"Config loaded from sheet {_config_sheet_id}", file=sys.stderr)
+            print(f"DEBUG: Config loaded from sheet {_config_sheet_id}. Keys found: {list(config.keys())}", file=sys.stdout)
             return merged
         else:
+            print(f"DEBUG: Sheet {_config_sheet_id} was empty or invalid structure. Using defaults.", file=sys.stdout)
             return DEFAULT_CONFIG
             
     except Exception as e:
-        print(f"Error loading config from sheets: {e}", file=sys.stderr)
+        print(f"CRITICAL ERROR loading config from sheets: {e}", file=sys.stdout)
         return DEFAULT_CONFIG
 
 def save_config(config):
