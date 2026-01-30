@@ -118,10 +118,27 @@ def execute_tool(tool_name, args, user_id=None):
     elif tool_name == "update_notion_task":
         from tools.notion_ops import update_notion_task
         return update_notion_task(args.get("page_id"), args.get("status"), args.get("title"))
-    elif tool_name == "delegate_to_maker":
+    elif tool_name == "consult_fumi":
         from core.maker import maker
         response_text = maker.run(args.get("request", ""))
-        return {"report": response_text}
+        return {"expert": "Fumi", "response": response_text}
+    elif tool_name == "consult_aki":
+        from core.librarian import librarian
+        response_text = librarian.run(args.get("request", ""))
+        return {"expert": "Aki", "response": response_text}
+    elif tool_name == "consult_toki":
+        from core.historian import historian
+        # Pass user_id for history lookup
+        response_text = historian.run(args.get("request", ""), user_id=user_id)
+        return {"expert": "Toki", "response": response_text}
+    elif tool_name == "consult_ren":
+        from core.communicator import communicator
+        response_text = communicator.run(args.get("request", ""))
+        return {"expert": "Ren", "response": response_text}
+    elif tool_name == "consult_rina":
+        from core.scheduler import scheduler
+        response_text = scheduler.run(args.get("request", ""))
+        return {"expert": "Rina", "response": response_text}
     else:
         return {"error": f"Unknown tool: {tool_name}"}
 
@@ -145,7 +162,20 @@ def format_tool_result(tool_name, result):
             return f"{result['target']}まで **{result['days']}日** です！"
         else:
             return f"{result['date']}（{result['weekday']}）です！"
+            
+    # --- Expert Responses ---
+    elif tool_name == "consult_fumi":
+        return f"Fumiさんからの報告です📄：\n\n{result.get('response', '')}"
+    elif tool_name == "consult_aki":
+        return f"Akiさんからの報告です📁：\n\n{result.get('response', '')}"
+    elif tool_name == "consult_toki":
+        return f"Tokiさんからの報告です📜：\n\n{result.get('response', '')}"
+    elif tool_name == "consult_ren":
+        return f"Renさんからの報告です💌：\n\n{result.get('response', '')}"
+    elif tool_name == "consult_rina":
+        return f"Rinaさんからの報告です📅：\n\n{result.get('response', '')}"
     
+    # Basic Tools (mostly unused directly now, but kept for safety)
     elif tool_name == "search_and_read_pdf":
         text = result.get('text', '')[:1000]
         return f"PDF読み取りました！📄\n\nファイル: {result.get('filename', '')}\n\n---\n{text}"
@@ -227,8 +257,8 @@ def format_tool_result(tool_name, result):
         t = result.get("task", {})
         return f"ToDoを追加しました！✨\n\n📝 {t.get('title', '')}"
 
-    elif tool_name == "delegate_to_maker":
-        return f"フミさんに頼んできますね！👩‍💻\n\n{result.get('report', '')}"
+    elif tool_name == "delegate_to_maker": # Backward compatibility or error
+        return f"フミさんに頼んできました！👩‍💻\n\n{result.get('report', '')}"
     
     return json.dumps(result, ensure_ascii=False)
 
@@ -248,9 +278,9 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
     # Get conversation history
     history = get_user_history(user_id)
     
-    # Use gemini-2.0-flash-exp (or gemini-1.5-pro) for Multimodal
-    # gemini-3-flash-preview is also capable
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={GEMINI_API_KEY}"
+    # Use gemini-1.5-flash (stable) or gemini-2.0-flash-exp
+    # gemini-1.5-flash is faster and stable
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-001:generateContent?key={GEMINI_API_KEY}"
     
     headers = {'Content-Type': 'application/json'}
     
@@ -267,9 +297,10 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
     
     if knowledge_sources:
         # 1. Search Knowledge Base
-        from utils.vector_store import search_knowledge_base
-        print(f"Searching knowledge base for: {user_message}", file=sys.stderr)
-        hits = search_knowledge_base(user_message, n_results=3)
+        # from utils.vector_store import search_knowledge_base
+        # print(f"Searching knowledge base for: {user_message}", file=sys.stderr)
+        # hits = search_knowledge_base(user_message, n_results=3)
+        hits = []
         
         # 2. Add Hits to Context
         if hits:
@@ -406,94 +437,116 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
         "generationConfig": {"temperature": 0.8, "maxOutputTokens": 1024}
     }
     
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(data).encode('utf-8'),
-        headers=headers,
-        method='POST'
+    # Use Gemini SDK instead of urllib (urllib was returning 404)
+    import google.generativeai as genai
+    genai.configure(api_key=GEMINI_API_KEY)
+    
+    # Wrap TOOLS in SDK-compatible format
+    # SDK accepts list of dicts but requires wrapping in a Tool object
+    sdk_tools = [genai.protos.Tool(function_declarations=[
+        genai.protos.FunctionDeclaration(
+            name=t["name"],
+            description=t.get("description", ""),
+            parameters=genai.protos.Schema(
+                type=genai.protos.Type.OBJECT,
+                properties={
+                    k: genai.protos.Schema(type=genai.protos.Type.STRING, description=v.get("description", ""))
+                    for k, v in t.get("parameters", {}).get("properties", {}).items()
+                },
+                required=t.get("parameters", {}).get("required", [])
+            )
+        ) for t in TOOLS
+    ])]
+    
+    # Use gemini-3-flash-preview (latest) as requested by user
+    # Fallback: gemini-2.5-flash if 3.0 is unstable
+    model = genai.GenerativeModel(
+        "gemini-3-flash-preview",
+        system_instruction=full_system_prompt,
+        tools=sdk_tools
     )
     
+    # Build chat history for SDK
+    chat_history = []
+    for msg in history:
+        role = "model" if msg["role"] == "model" else "user"
+        chat_history.append({"role": role, "parts": [msg["text"]]})
+    
+    chat = model.start_chat(history=chat_history)
+    
     try:
-            # Agent Loop: Handle multiple tool calls
-            max_turns = 5
-            for turn in range(max_turns):
-                with urllib.request.urlopen(req, timeout=60) as res:
-                    result = json.loads(res.read().decode('utf-8'))
-                    candidates = result.get('candidates', [])
+        # Agent Loop: Handle multiple tool calls
+        max_turns = 5
+        
+        # Initial message (with image if present)
+        if image_data and mime_type:
+            import base64
+            b64_data = base64.b64encode(image_data).decode('utf-8')
+            response = chat.send_message([
+                {"mime_type": mime_type, "data": b64_data},
+                user_message
+            ])
+        else:
+            response = chat.send_message(user_message)
+        
+        for turn in range(max_turns):
+            # Check for function calls
+            if response.candidates and response.candidates[0].content.parts:
+                parts = response.candidates[0].content.parts
+                
+                function_call = None
+                text_response = None
+                
+                for part in parts:
+                    if hasattr(part, 'function_call') and part.function_call:
+                        function_call = part.function_call
+                    if hasattr(part, 'text') and part.text:
+                        text_response = part.text
+                
+                if function_call:
+                    tool_name = function_call.name
+                    tool_args = dict(function_call.args) if function_call.args else {}
                     
-                    if not candidates:
-                        return 'ちょっと調子悪いみたいです...もう一度試してもらえますか？'
+                    print(f"[DEBUG] SDK Tool Call: {tool_name}({tool_args})", file=sys.stderr)
+                    tool_result = execute_tool(tool_name, tool_args, user_id=user_id)
                     
-                    content = candidates[0].get('content', {})
-                    parts = content.get('parts', [])
-                    print(f"[DEBUG] Model Response Parts: {parts}", file=sys.stderr)
-                    
-                    # 1. Check for functionCall (Prioritize over text for loop)
-                    function_call_part = next((p for p in parts if 'functionCall' in p), None)
-                    
-                    # --- GUARDRAIL: Force Fumi Delegation if model forgets ---
-                    text_part = next((p.get('text', '') for p in parts if 'text' in p), "")
-                    if not function_call_part and ("ふみさんへのお願い" in text_part or "**依頼:**" in text_part):
-                         print("[DEBUG] Guardrail triggered: Forcing delegate_to_maker", file=sys.stderr)
-                         # Clean up text to extract the request
-                         request_text = text_part
-                         function_call_part = {
-                             'functionCall': {
-                                 'name': 'delegate_to_maker',
-                                 'args': {'request': request_text}
-                             }
-                         }
-                    # ---------------------------------------------------------
-
-                    if function_call_part:
-                        func_call = function_call_part['functionCall']
-                        tool_name = func_call.get('name')
-                        tool_args = func_call.get('args', {})
-                        
-                        print(f"[DEBUG] Executing tool: {tool_name}", file=sys.stderr)
-                        tool_result = execute_tool(tool_name, tool_args, user_id=user_id)
-                        
-                        # Add function call and response to history (contents) for next request
-                        contents.append({
-                            "role": "model",
-                            "parts": [function_call_part]
-                        })
-                        
-                        contents.append({
-                            "role": "function",
-                            "parts": [{
-                                "functionResponse": {
-                                    "name": tool_name,
-                                    "response": {"result": tool_result}
-                                }
-                            }]
-                        })
-                        
-                        # Update request data with new history
-                        data["contents"] = contents
-                        req = urllib.request.Request(
-                            url,
-                            data=json.dumps(data).encode('utf-8'),
-                            headers=headers,
-                            method='POST'
+                    # Send function response back
+                    response = chat.send_message(
+                        genai.protos.Content(
+                            parts=[genai.protos.Part(
+                                function_response=genai.protos.FunctionResponse(
+                                    name=tool_name,
+                                    response={"result": tool_result}
+                                )
+                            )]
                         )
-                        continue # Loop to call API again with tool result
-
-                    # 2. If no functionCall, return text (End of turn)
-                    for part in parts:
-                        if 'text' in part:
-                            response_text = part['text']
-                            add_message(user_id, "model", response_text)
-                            # Save model response to vector store for RAG
-                            try:
-                                from utils.vector_store import save_conversation
-                                save_conversation(user_id, "model", response_text)
-                            except:
-                                pass
-                            return response_text
+                    )
+                    continue  # Loop to process next response
+                
+                # No function call, check for text response
+                if text_response:
+                    add_message(user_id, "model", text_response)
+                    # Save to vector store
+                    try:
+                        from utils.vector_store import save_conversation
+                        save_conversation(user_id, "model", text_response)
+                    except:
+                        pass
+                    return text_response
             
-            return '考えがまとまりませんでした...もう一度聞いてください。'
+            # Try direct .text access as fallback
+            try:
+                if response.text:
+                    response_text = response.text
+                    add_message(user_id, "model", response_text)
+                    return response_text
+            except:
+                pass
+            
+            break  # Exit loop if no content
+        
+        return '考えがまとまりませんでした...もう一度聞いてください。'
     
     except Exception as e:
-        print(f"Gemini error: {e}", file=sys.stderr)
-        return "ちょっとエラーが出ちゃいました...😢"
+        print(f"Gemini SDK error: {e}", file=sys.stderr)
+        return f"ちょっとエラーが出ちゃいました...😢\nDEBUG: {str(e)}"
