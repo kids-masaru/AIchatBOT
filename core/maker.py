@@ -1,91 +1,103 @@
 """
 Maker Agent (The Writer)
 Specialized in creating documents (Docs, Slides, Spreadsheets) by researching Google Drive.
+Uses google-genai SDK (new official library).
 """
 import os
 import sys
-import json
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from tools.google_ops import search_drive, read_drive_file, create_google_doc, create_google_sheet, create_google_slide, move_drive_file, create_drive_folder
 from utils.sheets_config import load_config
 
+# --- FIXED ROLE DEFINITION (Immutable Job Description) ---
+FUMI_CORE_ROLE = """
+あなたは「フミ (Fumi)」です。KOTOチームの「資料作成担当（Creator）」として振る舞ってください。
+あなたの使命は、ユーザーの依頼に基づき、高品質なドキュメント、スプレッドシート、プレゼンテーションを作成することです。
+
+【あなたの専門スキルと行動ルール】
+1. **Drive Research**: 作成前に必ず `search_drive` と `read_drive_file` を使い、関連情報を調査してください。想像で書かず、事実に基づいた資料を作ることがあなたのポリシーです。
+2. **Quality Output**: ドキュメント作成時は、単なるテキストの羅列ではなく、見出しや箇条書きを使った読みやすい構成を心がけてください。
+3. **Execution**: 提案だけでなく、実際にツールを使ってファイルを作成 (`create_...`) してください。
+4. **Safety**: 既存のファイルを上書きしたり削除したりするツールは持っていません。常に新規作成を行います。
+
+【利用可能なツール】
+- search_drive(query): Google Drive内のファイルを検索
+- read_drive_file(file_id): ファイルのテキスト内容を読み込み
+- create_google_doc(title, content): Googleドキュメントを新規作成
+- create_google_sheet(title): Googleスプレッドシートを新規作成
+- create_google_slide(title): Googleスライドを新規作成
+- create_drive_folder(folder_name): 整理用のフォルダを作成
+- move_drive_file(file_id, folder_id): ファイルを特定のフォルダへ移動
+
+【プロセス: ドキュメント作成の標準フロー】
+1. **調査**: ユーザーの依頼に関連するキーワードで `search_drive` を実行。
+2. **読解**: ヒットしたファイルの中身を `read_drive_file` で確認（複数可）。
+3. **構成**: 集めた情報を整理し、ドキュメントの構成を練る。
+4. **作成**: `create_google_doc` 等を実行して実ファイルを作成。
+5. **報告**: 作成したファイルのURLと、どのような意図で作ったかをユーザーに報告。
+
+【プロセス: フォルダ整理の標準フロー】
+1. `search_drive` で対象ファイルをリストアップ。
+2. `read_drive_file` で内容を確認（重複チェックなど）。
+3. `create_drive_folder` で適切なフォルダを作成。
+4. `move_drive_file` で移動。
+5. 移動結果（数と移動先）を報告。
+"""
+
 class MakerAgent:
     def __init__(self):
-        self.model_name = "gemini-2.0-flash-exp" # High reasoning capability
-        self.api_key = os.environ.get("GEMINI_API_KEY")
-        if self.api_key:
-            genai.configure(api_key=self.api_key)
-            
-        # Define the specific tools for this agent
-        self.tools = [search_drive, read_drive_file, create_google_doc, create_google_sheet, create_google_slide, move_drive_file, create_drive_folder]
-        
-        self.model = genai.GenerativeModel(
-            model_name=self.model_name,
-            tools=self.tools
-        )
+        self.model_name = "gemini-3-flash-preview"
+        # New SDK uses GEMINI_API_KEY env var automatically
+        self.client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+        # Tools are passed as Python functions directly
+        self.tools = [
+            search_drive, 
+            read_drive_file, 
+            create_google_doc, 
+            create_google_sheet, 
+            create_google_slide, 
+            move_drive_file, 
+            create_drive_folder
+        ]
         
     def run(self, user_request: str, chat_history: list = None) -> str:
         """
-        Execute the maker task.
-        In a real agentic loop, this would run multiple turns (Search -> Read -> Write).
-        For now, we use Gemini's automatic function calling (if available in the library version) 
-        or a simple ReAct loop. 
-        Given the current simple implementation of `agent.py`, we'll try to use the model's auto-tool-use capability.
+        Execute the maker task using the new google-genai SDK with automatic function calling.
         """
-        print(f"Maker: Starting with request: {user_request}", file=sys.stderr)
+        print(f"Maker(Fumi): Starting with request: {user_request}", file=sys.stderr)
         
-        config = load_config()
-        # Allow user to customize the persona via config
-        # Allow user to customize the persona via config
-        # [Config Update] Use fumi_instruction
-        system_instruction = config.get('fumi_instruction', """
-        あなたは「フミ (Fumi)」です。資料作成の専門家として振る舞ってください。
-        ユーザーの依頼に基づき、Google Drive内の情報を調査し、高品質なドキュメントを作成します。
+        # 1. Load User Configuration (Personality/Add-on Instructions)
+        config_data = load_config()
+        user_instruction = config_data.get('fumi_instruction', '')
         
-        【利用可能なツール】
-        - search_drive(query): ファイルを検索します。
-        - read_drive_file(file_id): ファイルの中身（テキスト）を読み込みます。
-        - create_google_doc(title, content): Googleドキュメントを作成します。
-        - create_drive_folder(folder_name): 新しいフォルダを作成します。
-        - move_drive_file(file_id, folder_id): ファイルを移動します。
+        # 2. Construct the Composite System Prompt
+        system_instruction = f"{FUMI_CORE_ROLE}\n\n"
         
-        【プロセス: ドキュメント作成】
-        1. 必要な情報が足りない場合は、まず `search_drive` で関連資料を探してください。
-        2. 見つかった資料の `file_id` を使って `read_drive_file` で内容を確認してください。
-        3. 集めた情報を整理・要約し、ユーザーの依頼に沿ったドキュメントを作成してください。
+        if user_instruction:
+            system_instruction += f"【ユーザーからの追加指示（性格・振る舞い・特記事項）】\n{user_instruction}\n"
+            system_instruction += "※上記の指示がCore Roleと矛盾する場合は、Core Role（資料作成の遂行）を優先しつつ、可能な限りトーンや方針を取り入れてください。"
         
-        【プロセス: フォルダ整理】
-        1. `search_drive` で整理対象のファイルを洗い出します。
-        2. 重複かどうか判断するため、必要に応じて `read_drive_file` で中身を確認します（同名でも中身が違う場合があるため）。
-        3. 必要なら `create_drive_folder` で整理用フォルダ（例:「重複」）を作成します。
-        4. `move_drive_file` でファイルを移動します。
-        5. **重要:** 最後に「何というファイルを、どこのフォルダに移動したか」を具体的に報告してください。
-        
-        【注意】
-        - 嘘の情報（ハルシネーション）を書かないでください。ドライブにない情報は「不明」としてください。
-        - ファイルを作成・移動する際は、必ず実行結果を確認してください。
-        """)
-        
-        # Start a chat session with the system instruction
-        # Note: 'system_instruction' param is supported in newer SDKs. 
-        # If not, we prepend it to history.
-        
-        history = []
-        history.append({"role": "user", "parts": [system_instruction]})
-        history.append({"role": "model", "parts": ["了解しました。私はMakerとして、ドライブの情報を活用しドキュメント作成を行います。"]})
-        
-        if chat_history:
-            # Append recent context if needed (simplified)
-            pass
-            
-        chat = self.model.start_chat(history=history, enable_automatic_function_calling=True)
+        # 3. Build content with system instruction prepended
+        full_prompt = f"{system_instruction}\n\n【ユーザーからの依頼】\n{user_request}"
         
         try:
-            response = chat.send_message(user_request)
+            # 4. Configure and call using new SDK
+            gen_config = types.GenerateContentConfig(
+                tools=self.tools,
+                system_instruction=system_instruction,
+            )
+            
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=user_request,
+                config=gen_config,
+            )
+            
             return response.text
         except Exception as e:
-            print(f"Maker Execution Error: {e}", file=sys.stderr)
-            return f"申し訳ありません、資料作成中にエラーが発生しました: {str(e)}"
+            print(f"Maker(Fumi) Execution Error: {e}", file=sys.stderr)
+            return f"申し訳ありません、Fumiの処理中にエラーが発生しました: {str(e)}"
 
 # Singleton
 maker = MakerAgent()

@@ -10,4 +10,4 @@ beautifulsoup4>=4.12.0
 python-dotenv>=1.0.0
 pinecone>=3.0.0
 apscheduler>=3.10.0
-google-generativeai==0.8.6
+google-genai>=1.0.0

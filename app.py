@@ -388,29 +388,31 @@ def send_reminder(user_id, location, reminder):
     now = datetime.now(jst)
     today_str = now.strftime('%Y年%m月%d日')
     
-    # [Modified] Inject Today's Date (JST) into prompt to prevent "Yesterday" issue
-    prompt = (
-        f"現在は日本時間の {today_str} です。\n"
-        f"今日の{location}の{reminder.get('prompt')}\n"
-        "【重要】以下の3つのセクションに分けて、それぞれの間に「@@@」という区切り文字を入れて出力してください。\n"
-        "1. 天気に関する情報\n"
-        "2. スケジュール・タスクに関する情報\n"
-        "3. 気の利いた一言メッセージ"
-    )
+    # Get prompt entirely from config - no hardcoded structure
+    # The prompt in config should include any formatting instructions the user wants
+    config_prompt = reminder.get('prompt', '今日の天気と予定を教えて')
+    
+    # Only inject date and location context, let config control everything else
+    prompt = f"現在は日本時間の {today_str} です。場所は{location}です。\n\n{config_prompt}"
     
     try:
         response = get_gemini_response(user_id, prompt)
-        messages = [msg.strip() for msg in response.split('@@@') if msg.strip()]
         
-        # Add greeting
-        h = now.hour
-        if messages:
-            if h < 12 and "おはよう" not in messages[0]:
-                messages[0] = f"おはようございます！☀️\n\n{messages[0]}"
-            elif h >= 18 and "こんばんは" not in messages[0]:
-                messages[0] = f"こんばんは！🌙\n\n{messages[0]}"
+        # Check if config specifies a separator for multi-message splitting
+        separator = reminder.get('separator', None)
+        if separator and separator in response:
+            messages = [msg.strip() for msg in response.split(separator) if msg.strip()]
         else:
             messages = [response]
+        
+        # Add greeting based on time (this is behavior, not content - stays in code)
+        h = now.hour
+        if messages:
+            first_msg = messages[0]
+            if h < 12 and "おはよう" not in first_msg:
+                messages[0] = f"おはようございます！☀️\n\n{first_msg}"
+            elif h >= 18 and "こんばんは" not in first_msg:
+                messages[0] = f"こんばんは！🌙\n\n{first_msg}"
             
         push_message(user_id, messages)
         print(f"Sent reminder to {user_id[:8]}", file=sys.stderr)

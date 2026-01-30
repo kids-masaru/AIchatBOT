@@ -37,10 +37,11 @@ class GeminiEmbedder:
 
     def _get_gemini_embedding(self, text: str) -> List[float]:
         """Get embedding from Gemini API"""
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key={GEMINI_API_KEY}"
+        # Fallback to embedding-001 if text-embedding-004 is 404
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/embedding-001:embedContent?key={GEMINI_API_KEY}"
         
         data = {
-            "model": "models/text-embedding-004",
+            "model": "models/embedding-001",
             "content": {"parts": [{"text": text[:2000]}]}  # Truncate to avoid token limits
         }
         
