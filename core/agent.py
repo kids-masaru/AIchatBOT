@@ -264,59 +264,63 @@ def add_task(title: str, due_date: str = None) -> dict:
     from tools.google_ops import add_task as add_impl
     return add_impl(title, due_date)
 
-def list_notion_tasks(database_id: str = None, filter_today: bool = False) -> dict:
-    """List tasks from a Notion database.
+def get_notion_tasks(filter_today_only: bool) -> dict:
+    """Get tasks from the configured Notion database.
     
     Args:
-        database_id: Notion database ID (optional, uses config if not provided)
-        filter_today: Filter to show only today's tasks
+        filter_today_only: If true, show only today's tasks. If false, show all tasks.
     
     Returns:
         Dictionary with task list
     """
     from tools.notion_ops import list_notion_tasks as notion_impl
+    from utils.sheets_config import load_config
+    
+    config = load_config()
+    notion_dbs = config.get("notion_databases", [])
+    database_id = notion_dbs[0].get("id", "") if notion_dbs else ""
+    
     if not database_id:
-        from utils.sheets_config import load_config
-        config = load_config()
-        notion_dbs = config.get("notion_databases", [])
-        if notion_dbs:
-            database_id = notion_dbs[0].get("id", "")
-    return notion_impl(database_id, filter_today)
+        return {"error": "Notionデータベースが設定されていません。管理コンソールでデータベースIDを追加してください。"}
+    
+    print(f"Notion: Using database_id={database_id}", file=sys.stderr)
+    return notion_impl(database_id, filter_today_only)
 
-def create_notion_task(title: str, due_date: str = None, status: str = None, database_id: str = None) -> dict:
-    """Create a new task in Notion.
+def add_notion_task(title: str, due_date: str) -> dict:
+    """Create a new task in the configured Notion database.
     
     Args:
-        title: Task title
-        due_date: Due date (YYYY-MM-DD, optional)
-        status: Task status (optional)
-        database_id: Notion database ID (optional, uses config if not provided)
+        title: Task title (required)
+        due_date: Due date in YYYY-MM-DD format (use empty string if no due date)
     
     Returns:
         Dictionary with created task info
     """
     from tools.notion_ops import create_notion_task as create_impl
+    from utils.sheets_config import load_config
+    
+    config = load_config()
+    notion_dbs = config.get("notion_databases", [])
+    database_id = notion_dbs[0].get("id", "") if notion_dbs else ""
+    
     if not database_id:
-        from utils.sheets_config import load_config
-        config = load_config()
-        notion_dbs = config.get("notion_databases", [])
-        if notion_dbs:
-            database_id = notion_dbs[0].get("id", "")
-    return create_impl(database_id, title, due_date, status)
+        return {"error": "Notionデータベースが設定されていません。管理コンソールでデータベースIDを追加してください。"}
+    
+    print(f"Notion: Creating task in database_id={database_id}", file=sys.stderr)
+    return create_impl(database_id, title, due_date if due_date else None, None)
 
-def update_notion_task(page_id: str, status: str = None, title: str = None) -> dict:
-    """Update an existing Notion task.
+def complete_notion_task(page_id: str, new_status: str) -> dict:
+    """Update the status of an existing Notion task.
     
     Args:
-        page_id: Notion page ID
-        status: New status (optional)
-        title: New title (optional)
+        page_id: Notion page ID of the task to update
+        new_status: New status value (e.g., "完了", "Done")
     
     Returns:
         Dictionary with update result
     """
     from tools.notion_ops import update_notion_task as update_impl
-    return update_impl(page_id, status, title)
+    return update_impl(page_id, new_status, None)
 
 def consult_fumi(request: str) -> dict:
     """Consult Fumi (資料作成担当) for document creation tasks. Use for creating docs, sheets, slides.
@@ -422,9 +426,9 @@ KOTO_TOOLS = [
     find_free_slots,
     list_tasks,
     add_task,
-    list_notion_tasks,
-    create_notion_task,
-    update_notion_task,
+    get_notion_tasks,
+    add_notion_task,
+    complete_notion_task,
     set_reminder,
     consult_fumi,
     consult_aki,
