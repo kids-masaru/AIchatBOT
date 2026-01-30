@@ -532,8 +532,56 @@ def list_tasks(show_completed=False, due_date=None):
         return {"error": f"ToDoリスト取得中にエラーが発生しました: {str(e)}"}
 
 
+def normalize_to_rfc3339(date_str):
+    """
+    Convert various date formats to RFC 3339 format for Google Tasks API.
+    Accepts: YYYY-MM-DD, YYYY-MM-DDTHH:MM:SS, or already RFC 3339 formatted strings.
+    Returns: RFC 3339 formatted string (e.g., 2026-01-30T00:00:00.000Z) or None if invalid.
+    """
+    if not date_str:
+        return None
+    
+    from datetime import datetime, timezone, timedelta
+    
+    try:
+        # Already in UTC RFC 3339 format
+        if date_str.endswith('Z'):
+            return date_str
+        
+        # Already has timezone offset (e.g., +09:00)
+        if '+' in date_str or (date_str.count('-') > 2 and 'T' in date_str):
+            # Parse and convert to UTC
+            if '+' in date_str:
+                # Has timezone, parse it
+                dt = datetime.fromisoformat(date_str)
+                utc_dt = dt.astimezone(timezone.utc)
+                return utc_dt.strftime('%Y-%m-%dT%H:%M:%S.000Z')
+        
+        # YYYY-MM-DD format (most common from AI)
+        if len(date_str) == 10 and date_str.count('-') == 2:
+            # Treat as midnight JST, convert to UTC
+            jst = timezone(timedelta(hours=9))
+            dt = datetime.strptime(date_str, '%Y-%m-%d').replace(hour=0, minute=0, second=0, tzinfo=jst)
+            utc_dt = dt.astimezone(timezone.utc)
+            return utc_dt.strftime('%Y-%m-%dT%H:%M:%S.000Z')
+        
+        # YYYY-MM-DDTHH:MM:SS without timezone
+        if 'T' in date_str and len(date_str) >= 19:
+            jst = timezone(timedelta(hours=9))
+            dt = datetime.fromisoformat(date_str).replace(tzinfo=jst)
+            utc_dt = dt.astimezone(timezone.utc)
+            return utc_dt.strftime('%Y-%m-%dT%H:%M:%S.000Z')
+        
+        # Fallback: return as-is and let API handle it
+        return date_str
+        
+    except Exception as e:
+        print(f"Date normalization error for '{date_str}': {e}", file=sys.stderr)
+        return None
+
+
 def add_task(title, due=None):
-    """Add a new Google Task (due: RFC 3339 timestamp string)"""
+    """Add a new Google Task. Accepts due date in YYYY-MM-DD or RFC 3339 format."""
     try:
         creds = get_google_credentials()
         if not creds:
@@ -544,8 +592,15 @@ def add_task(title, due=None):
         task = {
             'title': title
         }
+        
+        # Convert due date to RFC 3339 format
         if due:
-            task['due'] = due
+            normalized_due = normalize_to_rfc3339(due)
+            if normalized_due:
+                task['due'] = normalized_due
+                print(f"Tasks add: converted '{due}' -> '{normalized_due}'", file=sys.stderr)
+            else:
+                print(f"Tasks add: could not normalize date '{due}', skipping due date", file=sys.stderr)
             
         result = service.tasks().insert(tasklist='@default', body=task).execute()
         return {"success": True, "task": result}

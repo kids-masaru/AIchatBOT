@@ -7,7 +7,6 @@ import os
 import sys
 from google import genai
 from google.genai import types
-from tools.google_ops import search_drive, read_drive_file, move_drive_file, create_drive_folder
 from utils.sheets_config import load_config
 
 # --- FIXED ROLE DEFINITION (Immutable Job Description) ---
@@ -16,20 +15,20 @@ AKI_CORE_ROLE = """
 あなたの使命は、Google Drive等のストレージを整理整頓し、ユーザーが必要な情報を即座に見つけられるようにすることです。
 
 【あなたの専門スキルと行動ルール】
-1. **Search Master**: ユーザーがファイルを探しているときは、まず `search_drive` を広範囲に行い、見つからなければ視点を変えて再検索してください。
-2. **Organizer**: ファイル整理の依頼があった場合、必ず中身を `read_drive_file` で確認してから、適切なフォルダに `move_drive_file` してください。「ファイル名だけで判断して移動」は禁止です。
+1. **Search Master**: ユーザーがファイルを探しているときは、まず `find_files` を広範囲に行い、見つからなければ視点を変えて再検索してください。
+2. **Organizer**: ファイル整理の依頼があった場合、必ず中身を `get_file_content` で確認してから、適切なフォルダに `move_file` してください。「ファイル名だけで判断して移動」は禁止です。
 3. **Reporter**: 整理や移動を行った際は、「何を」「どこから」「どこへ」移動したか正確に報告してください。
 4. **Safety**: ファイルを削除する権限はありません。不要と思われるファイルは「削除候補」等のフォルダを作ってそこに移動する提案をしてください。
 
 【利用可能なツール】
-- search_drive(query): ファイルを検索
-- read_drive_file(file_id): ファイルの中身を確認
-- create_drive_folder(folder_name): 新規フォルダ作成
-- move_drive_file(file_id, folder_id): ファイル移動
+- find_files(query): ファイルを検索
+- get_file_content(file_id): ファイルの中身を確認
+- make_folder(folder_name): 新規フォルダ作成
+- move_file(file_id, folder_id): ファイル移動
 
 【プロセス: 探し物】
-1. ユーザーの曖昧な記憶から検索クエリを推測して `search_drive`。
-2. 候補の中から `read_drive_file` で中身を確認し、探しているものか判定。
+1. ユーザーの曖昧な記憶から検索クエリを推測して `find_files`。
+2. 候補の中から `get_file_content` で中身を確認し、探しているものか判定。
 3. 見つかればリンクと共に提示。
 
 【プロセス: 整理整頓】
@@ -38,11 +37,65 @@ AKI_CORE_ROLE = """
 3. 必要なフォルダを作り、移動を実行。
 """
 
+# --- Tool Wrappers with Proper Type Hints ---
+# These provide clear signatures that the SDK can parse reliably
+
+def find_files(query: str) -> dict:
+    """Search for files in Google Drive.
+    
+    Args:
+        query: Search keywords to find files (e.g., "議事録", "2026年予算")
+    
+    Returns:
+        Dictionary with list of found files including id, name, and links
+    """
+    from tools.google_ops import search_drive
+    return search_drive(query)
+
+def get_file_content(file_id: str) -> dict:
+    """Read the content of a file from Google Drive.
+    
+    Args:
+        file_id: The ID of the file to read (obtained from find_files results)
+    
+    Returns:
+        Dictionary with file content text
+    """
+    from tools.google_ops import read_drive_file
+    return read_drive_file(file_id)
+
+def make_folder(folder_name: str) -> dict:
+    """Create a new folder in Google Drive.
+    
+    Args:
+        folder_name: Name for the new folder
+    
+    Returns:
+        Dictionary with folder id and link
+    """
+    from tools.google_ops import create_drive_folder
+    return create_drive_folder(folder_name)
+
+def move_file(file_id: str, folder_id: str) -> dict:
+    """Move a file to a different folder in Google Drive.
+    
+    Args:
+        file_id: The ID of the file to move
+        folder_id: The ID of the destination folder
+    
+    Returns:
+        Dictionary with move result
+    """
+    from tools.google_ops import move_drive_file
+    return move_drive_file(file_id, folder_id)
+
+
 class LibrarianAgent:
     def __init__(self):
         self.model_name = "gemini-3-flash-preview"
         self.client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-        self.tools = [search_drive, read_drive_file, move_drive_file, create_drive_folder]
+        # Use wrapper functions with proper type hints
+        self.tools = [find_files, get_file_content, make_folder, move_file]
         
     def run(self, user_request: str, chat_history: list = None) -> str:
         """
