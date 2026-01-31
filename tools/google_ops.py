@@ -642,9 +642,63 @@ def get_gmail_body(message_id: str):
             "date": headers.get('Date', ''),
             "body": body
         }
+
     except Exception as e:
         print(f"Gmail body error: {e}", file=sys.stderr)
         return {"error": f"メール本文取得中にエラーが発生しました: {str(e)}"}
+
+def create_gmail_draft(to: str = None, subject: str = None, body: str = "") -> dict:
+    """Create a draft email in Gmail.
+    
+    Args:
+        to: Email address of the recipient (optional)
+        subject: Email subject (optional)
+        body: Email body content (required)
+        
+    Returns:
+        Dictionary with draft ID and status
+    """
+    try:
+        creds = get_google_credentials()
+        if not creds:
+            return {"error": "Google認証に失敗しました。"}
+        
+        service = build('gmail', 'v1', credentials=creds)
+        
+        from email.message import EmailMessage
+        import base64
+        
+        message = EmailMessage()
+        message.set_content(body)
+        
+        if to:
+            message['To'] = to
+        if subject:
+            message['Subject'] = subject
+            
+        # Encode the message
+        encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+        create_message = {
+            'message': {
+                'raw': encoded_message
+            }
+        }
+        
+        draft = service.users().drafts().create(userId='me', body=create_message).execute()
+        
+        print(f"Draft created: {draft['id']}", file=sys.stderr)
+        return {
+            "success": True,
+            "id": draft['id'],
+            "status": "Draft created successfully",
+            "link": f"https://mail.google.com/mail/u/0/#drafts/{draft['message']['id']}"
+        }
+        
+    except Exception as e:
+        print(f"Create draft error: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return {"error": f"下書き作成中にエラーが発生しました: {str(e)}"}
 
 
 

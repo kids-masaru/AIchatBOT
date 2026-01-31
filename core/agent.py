@@ -405,6 +405,20 @@ def set_reminder(location: str) -> dict:
     from utils.user_db import register_user
     return register_user(_current_user_id, location)
 
+def create_draft(body: str, to: str = None, subject: str = None) -> dict:
+    """Create a draft email in Gmail.
+    
+    Args:
+        body: Email body content
+        to: Recipient email address (optional)
+        subject: Email subject (optional)
+        
+    Returns:
+        Dictionary with draft status
+    """
+    from tools.google_ops import create_gmail_draft
+    return create_gmail_draft(to, subject, body)
+
 # All available tools for Koto
 KOTO_TOOLS = [
     calculate,
@@ -421,6 +435,7 @@ KOTO_TOOLS = [
     search_drive,
     list_gmail,
     get_gmail_body,
+    create_draft,
     list_calendar_events,
     create_calendar_event,
     find_free_slots,
