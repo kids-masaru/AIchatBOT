@@ -17,6 +17,100 @@ from utils.storage import get_user_history, add_message
 # Gemini API
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 
+# Current user ID for tools that need it
+_current_user_id = None
+
+
+def analyze_document_layout(image_data: bytes, mime_type: str) -> dict:
+    """
+    Analyze the visual layout and structure of a document image.
+    Returns structured JSON data that can be used to recreate the document faithfully.
+    
+    Args:
+        image_data: Image bytes
+        mime_type: MIME type of the image
+        
+    Returns:
+        Dictionary with document structure analysis
+    """
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        
+        analysis_prompt = """この画像を詳細に分析し、ドキュメントの構造を以下のJSON形式で出力してください。
+できるだけ正確にレイアウトを再現できるよう、詳細に記述してください。
+
+```json
+{
+  "document_type": "領収書/請求書/議事録/その他",
+  "overall_layout": {
+    "has_border": true/false,
+    "has_header": true/false,
+    "has_footer": true/false,
+    "columns": 1,
+    "text_alignment": "left/center/right"
+  },
+  "title": {
+    "text": "タイトルテキスト",
+    "position": "top-center/top-left/top-right",
+    "style": "bold/normal",
+    "size": "large/medium/small"
+  },
+  "sections": [
+    {
+      "type": "header/body/table/signature/footer",
+      "position": "left/center/right",
+      "content": [
+        {"label": "ラベル", "value": "値", "style": "bold/normal"}
+      ]
+    }
+  ],
+  "special_elements": {
+    "logo": true/false,
+    "stamp": true/false,
+    "signature_line": true/false,
+    "date_field": {"position": "位置", "format": "YYYY年MM月DD日など"}
+  },
+  "styling_notes": "その他の重要なスタイリング情報（色、フォント、余白など）"
+}
+```
+
+重要: 
+- 各フィールドの正確なテキスト内容を含めてください
+- 位置関係（左寄せ、中央、右寄せ）を正確に記述してください
+- 罫線、表、区切り線の有無を明記してください
+- 金額や日付のフォーマットを正確に記述してください"""
+
+        # Create content with image
+        content = [
+            types.Part.from_bytes(data=image_data, mime_type=mime_type),
+            analysis_prompt
+        ]
+        
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",  # Use stable model for analysis
+            contents=content,
+        )
+        
+        result_text = response.text
+        
+        # Try to extract JSON from the response
+        import re
+        json_match = re.search(r'```json\s*([\s\S]*?)\s*```', result_text)
+        if json_match:
+            json_str = json_match.group(1)
+            try:
+                structure = json.loads(json_str)
+                return {"success": True, "structure": structure, "raw": result_text}
+            except json.JSONDecodeError:
+                pass
+        
+        # If no valid JSON, return the raw analysis
+        return {"success": True, "structure": None, "raw": result_text}
+        
+    except Exception as e:
+        print(f"Document layout analysis error: {e}", file=sys.stderr)
+        return {"error": str(e)}
+
 # --- Tool Wrapper Functions ---
 # These are designed to be passed directly to the new SDK.
 # Type hints and docstrings are crucial for the SDK to understand the tools.

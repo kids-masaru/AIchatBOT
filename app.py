@@ -208,10 +208,24 @@ def process_message_async(user_id, user_text, reply_token=None, message_id=None,
                 # If it's an image, pass content to Gemini for immediate understanding
                 image_data = None
                 image_mime = None
+                layout_analysis = None
+                
                 if message_type == 'image':
                     image_data = content
                     image_mime = mime
                     user_text += "\nまた、この画像の内容は添付データとして送信されています。何が写っているか聞かれたら答えてください。"
+                    
+                    # Perform document layout analysis for better recreation
+                    from core.agent import analyze_document_layout
+                    print("Analyzing document layout...", file=sys.stderr)
+                    layout_analysis = analyze_document_layout(content, mime)
+                    if layout_analysis.get("success"):
+                        if layout_analysis.get("structure"):
+                            user_text += f"\n\n【ドキュメント構造解析結果】\n```json\n{json.dumps(layout_analysis['structure'], ensure_ascii=False, indent=2)}\n```"
+                        else:
+                            user_text += f"\n\n【ドキュメント構造解析結果】\n{layout_analysis.get('raw', '')}"
+                        user_text += "\n\n★ユーザーが「同じ形式で作って」と言った場合は、上記の構造解析結果を参考に、レイアウトを可能な限り忠実に再現してください。"
+                        print("Layout analysis completed", file=sys.stderr)
                 
                 # If it's a PDF, convert to image for visual analysis
                 elif mime == 'application/pdf':
@@ -222,6 +236,18 @@ def process_message_async(user_id, user_text, reply_token=None, message_id=None,
                         image_data, image_mime = pdf_images[0]
                         user_text += f"\nまた、このPDFは画像に変換されて添付されています（{len(pdf_images)}ページ）。見た目やレイアウトを参考にできます。"
                         print(f"PDF converted to {len(pdf_images)} images for vision", file=sys.stderr)
+                        
+                        # Perform document layout analysis for PDF too
+                        from core.agent import analyze_document_layout
+                        print("Analyzing PDF document layout...", file=sys.stderr)
+                        layout_analysis = analyze_document_layout(image_data, image_mime)
+                        if layout_analysis.get("success"):
+                            if layout_analysis.get("structure"):
+                                user_text += f"\n\n【ドキュメント構造解析結果】\n```json\n{json.dumps(layout_analysis['structure'], ensure_ascii=False, indent=2)}\n```"
+                            else:
+                                user_text += f"\n\n【ドキュメント構造解析結果】\n{layout_analysis.get('raw', '')}"
+                            user_text += "\n\n★ユーザーが「同じ形式で作って」と言った場合は、上記の構造解析結果を参考に、レイアウトを可能な限り忠実に再現してください。"
+                            print("PDF layout analysis completed", file=sys.stderr)
 
             else:
                 error = result.get("error", "Unknown error")
