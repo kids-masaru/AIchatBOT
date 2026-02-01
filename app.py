@@ -446,22 +446,25 @@ def run_profiler():
 
 @app.route('/cron', methods=['GET'])
 def cron_job():
-    """Manual trigger for reminders (Legacy/Debug)"""
-    # 1. Check Reminders
+    """Manual trigger for reminders - Profiler runs in background to avoid timeout"""
+    import threading
+    
+    # 1. Check Reminders (fast, run synchronously)
     try:
         check_reminders()
     except Exception as e:
         print(f"Cron Reminder Error: {e}", file=sys.stderr)
         
-    # 2. Run Profiler (Update User Profile)
-    try:
-        # Run profiler if it's 07:00, 12:00, 18:00, or just run every hour?
-        # Profiling is expensive (Gemini call). Let's run it every hour but maybe logic inside limits it?
-        # For now, let's run it. The profiler logic itself (in profiler.py) checks if there are new logs ideally.
-        # But our current profiler just runs. Let's run it.
-        run_profiler()
-    except Exception as e:
-        print(f"Cron Profiler Error: {e}", file=sys.stderr)
+    # 2. Run Profiler in background thread (slow, avoid timeout)
+    def run_profiler_background():
+        try:
+            run_profiler()
+        except Exception as e:
+            print(f"Cron Profiler Error (background): {e}", file=sys.stderr)
+    
+    profiler_thread = threading.Thread(target=run_profiler_background, daemon=True)
+    profiler_thread.start()
+    print("Cron: Profiler started in background thread", file=sys.stderr)
 
     return 'Cron job executed', 200
 
