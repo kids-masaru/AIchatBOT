@@ -82,13 +82,13 @@ class CommunicatorAgent:
         try:
             gen_config = types.GenerateContentConfig(
                 system_instruction=system_instruction,
+                tools=self.tools,  # Tools must be inside config
             )
 
             response = self.client.models.generate_content(
                 model=self.model_name,
                 contents=user_request,
                 config=gen_config,
-                tools=self.tools, # Pass the tools to the model
             )
 
             return response.text
