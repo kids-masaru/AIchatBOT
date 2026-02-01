@@ -212,6 +212,16 @@ def process_message_async(user_id, user_text, reply_token=None, message_id=None,
                     image_data = content
                     image_mime = mime
                     user_text += "\nまた、この画像の内容は添付データとして送信されています。何が写っているか聞かれたら答えてください。"
+                
+                # If it's a PDF, convert to image for visual analysis
+                elif mime == 'application/pdf':
+                    from tools.google_ops import pdf_to_images
+                    pdf_images = pdf_to_images(content)
+                    if pdf_images:
+                        # Use first page as the visual reference
+                        image_data, image_mime = pdf_images[0]
+                        user_text += f"\nまた、このPDFは画像に変換されて添付されています（{len(pdf_images)}ページ）。見た目やレイアウトを参考にできます。"
+                        print(f"PDF converted to {len(pdf_images)} images for vision", file=sys.stderr)
 
             else:
                 error = result.get("error", "Unknown error")

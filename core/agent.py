@@ -419,6 +419,18 @@ def create_draft(body: str, to: str = None, subject: str = None) -> dict:
     from tools.google_ops import create_gmail_draft
     return create_gmail_draft(to, subject, body)
 
+def get_recent_uploads(count: int = 5) -> dict:
+    """Get the most recently uploaded files from LINE.
+    
+    Args:
+        count: Number of files to retrieve (default 5)
+        
+    Returns:
+        Dictionary with list of recent files
+    """
+    from tools.google_ops import get_latest_uploads
+    return get_latest_uploads(count)
+
 # All available tools for Koto
 KOTO_TOOLS = [
     calculate,
@@ -436,6 +448,7 @@ KOTO_TOOLS = [
     list_gmail,
     get_gmail_body,
     create_draft,
+    get_recent_uploads,
     list_calendar_events,
     create_calendar_event,
     find_free_slots,

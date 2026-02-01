@@ -833,3 +833,93 @@ def upload_file_to_drive(filename: str, file_data: bytes, mime_type: str = None)
         traceback.print_exc()
         print(f"Upload error: {e}", file=sys.stderr)
         return {"error": f"アップロード中にエラーが発生しました: {str(e)}"}
+
+
+def get_latest_uploads(count: int = 5) -> dict:
+    """
+    Get the most recently uploaded files from the shared Drive folder.
+    Useful for referencing files sent via LINE.
+    
+    Args:
+        count: Number of files to retrieve (default 5)
+        
+    Returns:
+        Dictionary with list of recent files
+    """
+    try:
+        creds = get_google_credentials()
+        if not creds:
+            return {"error": "Google認証に失敗しました。"}
+        
+        drive_service = build('drive', 'v3', credentials=creds)
+        folder_id = get_shared_folder_id()
+        
+        # Search for files in the shared folder, sorted by creation time
+        query = f"'{folder_id}' in parents and trashed = false"
+        
+        results = drive_service.files().list(
+            q=query,
+            pageSize=count,
+            orderBy='createdTime desc',
+            fields='files(id, name, mimeType, createdTime, webViewLink)',
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True
+        ).execute()
+        
+        files = results.get('files', [])
+        
+        return {
+            "success": True,
+            "count": len(files),
+            "files": [
+                {
+                    "id": f.get('id'),
+                    "name": f.get('name'),
+                    "type": f.get('mimeType'),
+                    "created": f.get('createdTime'),
+                    "url": f.get('webViewLink')
+                }
+                for f in files
+            ]
+        }
+        
+    except Exception as e:
+        print(f"Get latest uploads error: {e}", file=sys.stderr)
+        return {"error": f"ファイル一覧取得中にエラーが発生しました: {str(e)}"}
+
+
+def pdf_to_images(pdf_bytes: bytes) -> list:
+    """
+    Convert PDF pages to PNG images for Gemini Vision analysis.
+    
+    Args:
+        pdf_bytes: PDF file content as bytes
+        
+    Returns:
+        List of tuples: [(image_bytes, mime_type), ...]
+    """
+    try:
+        import fitz  # PyMuPDF
+        
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        images = []
+        
+        # Convert each page (limit to first 3 pages to avoid too much data)
+        for page_num in range(min(len(doc), 3)):
+            page = doc[page_num]
+            # Render at 150 DPI for good quality without being too large
+            pix = page.get_pixmap(dpi=150)
+            img_bytes = pix.tobytes("png")
+            images.append((img_bytes, "image/png"))
+        
+        doc.close()
+        print(f"PDF converted: {len(images)} pages", file=sys.stderr)
+        return images
+        
+    except ImportError:
+        print("PyMuPDF not installed, PDF to image conversion unavailable", file=sys.stderr)
+        return []
+    except Exception as e:
+        print(f"PDF to image conversion error: {e}", file=sys.stderr)
+        return []
+
