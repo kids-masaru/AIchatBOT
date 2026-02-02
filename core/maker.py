@@ -48,12 +48,20 @@ FUMI_CORE_ROLE = """
 - move_file(file_id, folder_id): ファイルを特定のフォルダへ移動
 - list_templates(): 登録済みテンプレート一覧を表示
 - use_template_to_create(template_type, new_name): テンプレートから新規ドキュメント作成
+- replace_doc_text(file_id, replacements): ドキュメント内のプレースホルダー（{{宛名}}など）を置換
 
-【プロセス: テンプレート活用フロー】★推奨★
+【プロセス: テンプレート活用フロー】★最優先★
 領収書、議事録、見積書など定型書類を作成する場合：
-1. まず `list_templates` で登録済みテンプレートを確認
-2. 該当テンプレートがあれば `use_template_to_create` で作成
-3. 作成されたドキュメントURLをユーザーに報告し、埋め込む項目を案内
+1. `list_templates` で登録済みテンプレートを確認
+2. `use_template_to_create` でテンプレートをコピーして新規作成
+   ※この時点ではまだプレースホルダー（{{宛名}}など）が残っています
+3. コピーしたファイルのIDを使って `replace_doc_text` を実行し、プレースホルダーを実際のデータに置換
+   例: replacements={"宛名": "田中商事 様", "金額": "¥50,000"}
+4. 完成したドキュメントURLを報告
+
+【重要ルール】
+- テンプレートを使用する場合、`create_document` でゼロから作ってはいけません。必ず `use_template_to_create` → `replace_doc_text` の手順を踏んでください。
+- これにより、ロゴや複雑なレイアウトを崩さずに作成できます。
 
 【プロセス: ドキュメント作成の標準フロー】
 1. **調査**: ユーザーの依頼に関連するキーワードで `find_files` を実行。
@@ -197,8 +205,19 @@ def use_template_to_create(template_type: str, new_name: str) -> dict:
         "success": True,
         "message": f"テンプレート「{template['name']}」を使用して作成しました。",
         "url": copy_result.get("url"),
+        "file_id": copy_result.get("file_id"), # file_id is crucial for replacement
         "fields": template.get("fields", [])
     }
+
+def replace_doc_text(file_id: str, replacements: dict) -> dict:
+    """Replace placeholders in a document.
+    
+    Args:
+        file_id: Document ID
+        replacements: Dictionary of placeholders to replace
+    """
+    from tools.template_ops import replace_placeholders
+    return replace_placeholders(file_id, replacements)
 
 
 class MakerAgent:
@@ -215,7 +234,11 @@ class MakerAgent:
             make_folder,
             move_file,
             list_templates,
-            use_template_to_create
+            make_folder,
+            move_file,
+            list_templates,
+            use_template_to_create,
+            replace_doc_text
         ]
         
     def run(self, user_request: str, chat_history: list = None) -> str:

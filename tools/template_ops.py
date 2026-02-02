@@ -424,3 +424,97 @@ def find_template_by_type(template_type: str) -> dict:
     except Exception as e:
         print(f"Find template error: {e}", file=sys.stderr)
         return {"error": f"テンプレート検索に失敗: {str(e)}"}
+
+
+def scan_for_placeholders(file_id: str) -> dict:
+    """
+    Scan a Google Doc for placeholders like {{name}}.
+    
+    Args:
+        file_id: The ID of the file to scan
+        
+    Returns:
+        Dictionary with list of detected fields
+    """
+    try:
+        from tools.google_ops import read_drive_file
+        content_result = read_drive_file(file_id)
+        
+        if content_result.get("error"):
+            return content_result
+        
+        text = content_result.get("content", "")
+        
+        import re
+        # Find all {{...}} patterns
+        matches = re.findall(r'\{\{(.+?)\}\}', text)
+        
+        # Unique fields, strip whitespace
+        fields = sorted(list(set([m.strip() for m in matches])))
+        
+        return {
+            "success": True, 
+            "fields": fields,
+            "count": len(fields)
+        }
+        
+    except Exception as e:
+        print(f"Scan placeholders error: {e}", file=sys.stderr)
+        return {"error": f"プレースホルダー解析に失敗: {str(e)}"}
+
+
+def replace_placeholders(file_id: str, replacements: dict) -> dict:
+    """
+    Replace placeholders in a Google Doc with actual values.
+    Uses batchUpdate to preserve formatting.
+    
+    Args:
+        file_id: The ID of the file to update
+        replacements: Dictionary of {key: value} (e.g., {"宛名": "田中様"})
+        
+    Returns:
+        Dictionary with update result
+    """
+    try:
+        creds = get_google_credentials()
+        if not creds:
+            return {"error": "Google認証に失敗しました。"}
+        
+        # We need docs service for batchUpdate
+        docs_service = build('docs', 'v1', credentials=creds)
+        
+        requests = []
+        for key, value in replacements.items():
+            # Prepare replacement text (handle None)
+            replace_text = str(value) if value is not None else ""
+            
+            # Create regex replacement request
+            # Matches {{key}}
+            requests.append({
+                'replaceAllText': {
+                    'containsText': {
+                        'text': f'{{{{{key}}}}}',
+                        'matchCase': True
+                    },
+                    'replaceText': replace_text
+                }
+            })
+            
+        if not requests:
+            return {"success": True, "message": "置換リクエストがありませんでした。"}
+            
+        # Execute batch update
+        result = docs_service.documents().batchUpdate(
+            documentId=file_id,
+            body={'requests': requests}
+        ).execute()
+        
+        return {
+            "success": True,
+            "message": f"{len(requests)}箇所のプレースホルダーを置換しました。",
+            "replies": result.get('replies', [])
+        }
+        
+    except Exception as e:
+        print(f"Replace placeholders error: {e}", file=sys.stderr)
+        return {"error": f"プレースホルダー置換に失敗: {str(e)}"}

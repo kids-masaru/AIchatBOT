@@ -608,6 +608,19 @@ def register_new_template(file_id: str, name: str, template_type: str, descripti
     fields_list = [f.strip() for f in fields.split(',')] if fields else []
     return register_template(file_id, name, template_type, description, fields_list, usage_hint)
 
+def doc_replace_text(file_id: str, replacements: dict) -> dict:
+    """Replace placeholders in a Google Doc.
+    
+    Args:
+        file_id: ID of the document
+        replacements: Dictionary like {"宛名": "田中様", "金額": "100円"}
+        
+    Returns:
+        Result of replacement
+    """
+    from tools.template_ops import replace_placeholders
+    return replace_placeholders(file_id, replacements)
+
 # All available tools for Koto
 KOTO_TOOLS = [
     calculate,
@@ -645,6 +658,7 @@ KOTO_TOOLS = [
     find_template,
     use_template,
     register_new_template,
+    doc_replace_text,
 ]
 
 
