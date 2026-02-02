@@ -46,6 +46,14 @@ FUMI_CORE_ROLE = """
 - create_presentation(title): Googleスライドを新規作成
 - make_folder(folder_name): 整理用のフォルダを作成
 - move_file(file_id, folder_id): ファイルを特定のフォルダへ移動
+- list_templates(): 登録済みテンプレート一覧を表示
+- use_template_to_create(template_type, new_name): テンプレートから新規ドキュメント作成
+
+【プロセス: テンプレート活用フロー】★推奨★
+領収書、議事録、見積書など定型書類を作成する場合：
+1. まず `list_templates` で登録済みテンプレートを確認
+2. 該当テンプレートがあれば `use_template_to_create` で作成
+3. 作成されたドキュメントURLをユーザーに報告し、埋め込む項目を案内
 
 【プロセス: ドキュメント作成の標準フロー】
 1. **調査**: ユーザーの依頼に関連するキーワードで `find_files` を実行。
@@ -152,6 +160,46 @@ def move_file(file_id: str, folder_id: str) -> dict:
     from tools.google_ops import move_drive_file
     return move_drive_file(file_id, folder_id)
 
+def list_templates() -> dict:
+    """List all available templates.
+    
+    Returns:
+        Dictionary with list of templates
+    """
+    from tools.template_ops import list_templates as lt
+    return lt()
+
+def use_template_to_create(template_type: str, new_name: str) -> dict:
+    """Create a new document from a template.
+    
+    Args:
+        template_type: Type of template (e.g., "領収書", "議事録")
+        new_name: Name for the new document
+        
+    Returns:
+        Dictionary with new document URL
+    """
+    from tools.template_ops import find_template_by_type, copy_template
+    
+    result = find_template_by_type(template_type)
+    if result.get("error"):
+        return result
+    if not result.get("found"):
+        return {"error": f"「{template_type}」のテンプレートが見つかりません。"}
+    
+    template = result["template"]
+    copy_result = copy_template(template["file_id"], new_name)
+    
+    if copy_result.get("error"):
+        return copy_result
+    
+    return {
+        "success": True,
+        "message": f"テンプレート「{template['name']}」を使用して作成しました。",
+        "url": copy_result.get("url"),
+        "fields": template.get("fields", [])
+    }
+
 
 class MakerAgent:
     def __init__(self):
@@ -165,7 +213,9 @@ class MakerAgent:
             create_spreadsheet, 
             create_presentation, 
             make_folder,
-            move_file
+            move_file,
+            list_templates,
+            use_template_to_create
         ]
         
     def run(self, user_request: str, chat_history: list = None) -> str:

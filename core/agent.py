@@ -525,6 +525,89 @@ def get_recent_uploads(count: int = 5) -> dict:
     from tools.google_ops import get_latest_uploads
     return get_latest_uploads(count)
 
+def list_available_templates() -> dict:
+    """List all templates in the template folder.
+    
+    Returns:
+        Dictionary with list of templates
+    """
+    from tools.template_ops import list_templates
+    return list_templates()
+
+def check_new_templates() -> dict:
+    """Check for new templates that haven't been registered yet.
+    
+    Returns:
+        Dictionary with unregistered templates that need user input
+    """
+    from tools.template_ops import check_unregistered_templates
+    return check_unregistered_templates()
+
+def find_template(template_type: str) -> dict:
+    """Find a registered template by type or name.
+    
+    Args:
+        template_type: Type to search for (e.g., "領収書", "議事録")
+        
+    Returns:
+        Dictionary with matching template
+    """
+    from tools.template_ops import find_template_by_type
+    return find_template_by_type(template_type)
+
+def use_template(template_type: str, new_document_name: str) -> dict:
+    """Use a template to create a new document.
+    
+    Args:
+        template_type: Type of template to use (e.g., "領収書")
+        new_document_name: Name for the new document
+        
+    Returns:
+        Dictionary with new document info
+    """
+    from tools.template_ops import find_template_by_type, copy_template
+    
+    # First find the template
+    result = find_template_by_type(template_type)
+    if result.get("error"):
+        return result
+    if not result.get("found"):
+        return {"error": f"「{template_type}」のテンプレートが見つかりませんでした。「テンプレート一覧」で確認してください。"}
+    
+    template = result["template"]
+    
+    # Copy the template
+    copy_result = copy_template(template["file_id"], new_document_name)
+    if copy_result.get("error"):
+        return copy_result
+    
+    return {
+        "success": True,
+        "message": f"テンプレート「{template['name']}」を使用して「{new_document_name}」を作成しました。",
+        "url": copy_result.get("url"),
+        "file_id": copy_result.get("file_id"),
+        "template_fields": template.get("fields", []),
+        "hint": "このドキュメントを開いて、必要な項目を埋めてください。"
+    }
+
+def register_new_template(file_id: str, name: str, template_type: str, description: str, fields: str, usage_hint: str) -> dict:
+    """Register a new template in the registry.
+    
+    Args:
+        file_id: Google Drive file ID of the template
+        name: Template name
+        template_type: Type (領収書, 議事録, etc.)
+        description: What this template is for
+        fields: Comma-separated list of fields to fill
+        usage_hint: When to use this template
+        
+    Returns:
+        Dictionary with registration result
+    """
+    from tools.template_ops import register_template
+    fields_list = [f.strip() for f in fields.split(',')] if fields else []
+    return register_template(file_id, name, template_type, description, fields_list, usage_hint)
+
 # All available tools for Koto
 KOTO_TOOLS = [
     calculate,
@@ -557,6 +640,11 @@ KOTO_TOOLS = [
     consult_toki,
     consult_ren,
     consult_rina,
+    list_available_templates,
+    check_new_templates,
+    find_template,
+    use_template,
+    register_new_template,
 ]
 
 
