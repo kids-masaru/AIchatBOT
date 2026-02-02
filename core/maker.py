@@ -239,9 +239,6 @@ class MakerAgent:
             make_folder,
             move_file,
             list_templates,
-            make_folder,
-            move_file,
-            list_templates,
             use_template_to_create,
             replace_doc_text
         ]
