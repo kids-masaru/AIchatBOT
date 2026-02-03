@@ -124,12 +124,13 @@ def create_document(title: str, content: str) -> dict:
     from tools.google_ops import create_google_doc
     return create_google_doc(title, content)
 
-def create_spreadsheet(title: str, data: list = None) -> dict:
+def create_spreadsheet(title: str, data: list[list[str | int | float]] = None) -> dict:
     """Create a new Google Spreadsheet.
     
     Args:
         title: Spreadsheet title
-        data: Optional 2D list of values to write (e.g., [["Name", "Age"], ["Alice", "30"]])
+        data: Optional 2D list of values to write. Inner values can be strings or numbers. 
+              Example: [["Name", "Age"], ["Alice", 30]]
     
     Returns:
         Dictionary with spreadsheet URL
@@ -137,12 +138,13 @@ def create_spreadsheet(title: str, data: list = None) -> dict:
     from tools.google_ops import create_google_sheet
     return create_google_sheet(title, data)
 
-def create_presentation(title: str, pages: list = None) -> dict:
+def create_presentation(title: str, pages: list[dict] = None) -> dict:
     """Create a new Google Slides presentation.
     
     Args:
         title: Presentation title
-        pages: Optional list of slides, e.g., [{"title": "Page 1", "body": "Bullet points..."}]
+        pages: Optional list of slides. Each slide is a dictionary with 'title' and 'body'.
+               Example: [{"title": "Slide 1", "body": "Bullet points..."}]
     
     Returns:
         Dictionary with presentation URL
