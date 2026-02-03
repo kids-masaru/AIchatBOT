@@ -124,29 +124,50 @@ def create_document(title: str, content: str) -> dict:
     from tools.google_ops import create_google_doc
     return create_google_doc(title, content)
 
-def create_spreadsheet(title: str) -> dict:
+def create_spreadsheet(title: str, data: list = None) -> dict:
     """Create a new Google Spreadsheet.
     
     Args:
         title: Spreadsheet title
+        data: Optional 2D list of values to write (e.g., [["Name", "Age"], ["Alice", "30"]])
     
     Returns:
         Dictionary with spreadsheet URL
     """
     from tools.google_ops import create_google_sheet
-    return create_google_sheet(title)
+    return create_google_sheet(title, data)
 
-def create_presentation(title: str) -> dict:
+def create_presentation(title: str, pages: list = None) -> dict:
     """Create a new Google Slides presentation.
     
     Args:
         title: Presentation title
+        pages: Optional list of slides, e.g., [{"title": "Page 1", "body": "Bullet points..."}]
     
     Returns:
         Dictionary with presentation URL
     """
     from tools.google_ops import create_google_slide
-    return create_google_slide(title)
+    return create_google_slide(title, pages)
+
+def create_memo(title: str, content: str) -> dict:
+    """Create a quick text memo (Keep alternative).
+    
+    Args:
+        title: Memo title
+        content: Memo content
+    """
+    from tools.google_ops import create_drive_memo
+    return create_drive_memo(title, content)
+
+def search_memos(text: str) -> dict:
+    """Search for memos.
+    
+    Args:
+        text: Text to search for in memos
+    """
+    from tools.google_ops import search_drive_memos
+    return search_drive_memos(text)
 
 def make_folder(folder_name: str) -> dict:
     """Create a new folder in Google Drive.
@@ -240,7 +261,9 @@ class MakerAgent:
             move_file,
             list_templates,
             use_template_to_create,
-            replace_doc_text
+            replace_doc_text,
+            create_memo,
+            search_memos
         ]
         
     def run(self, user_request: str, chat_history: list = None) -> str:

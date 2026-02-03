@@ -130,14 +130,20 @@ def create_google_sheet(title, data=None):
         return {"error": f"スプレッドシート作成中にエラーが発生しました: {str(e)}"}
 
 
-def create_google_slide(title):
-    """Create a Google Slides presentation directly in the shared folder"""
+def create_google_slide(title, pages=None):
+    """Create a Google Slides presentation directly in the shared folder
+    
+    Args:
+        title: Title of the presentation
+        pages: List of dicts [{'title': 'Slide 1', 'body': 'Content...'}, ...]
+    """
     try:
         creds = get_google_credentials()
         if not creds:
             return {"error": "Google認証に失敗しました。環境変数を確認してください。"}
         
         drive_service = build('drive', 'v3', credentials=creds)
+        slides_service = build('slides', 'v1', credentials=creds)
         
         folder_id = get_shared_folder_id()
         file_metadata = {
@@ -154,6 +160,50 @@ def create_google_slide(title):
             supportsAllDrives=True
         ).execute()
         pres_id = file.get('id')
+        
+        # If pages provided, add them
+        if pages:
+            requests = []
+            for i, page in enumerate(pages):
+                slide_id = f"slide_{i}"
+                title_id = f"title_{i}"
+                body_id = f"body_{i}"
+                
+                # 1. Create Slide
+                requests.append({
+                    'createSlide': {
+                        'objectId': slide_id,
+                        'slideLayoutReference': {'predefinedLayout': 'TITLE_AND_BODY'},
+                        'placeholderIdMappings': [
+                            {'layoutPlaceholder': {'type': 'TITLE'}, 'objectId': title_id},
+                            {'layoutPlaceholder': {'type': 'BODY'}, 'objectId': body_id},
+                        ]
+                    }
+                })
+                
+                # 2. Insert Title
+                if page.get('title'):
+                    requests.append({
+                        'insertText': {
+                            'objectId': title_id,
+                            'text': page['title']
+                        }
+                    })
+                    
+                # 3. Insert Body
+                if page.get('body'):
+                    requests.append({
+                        'insertText': {
+                            'objectId': body_id,
+                            'text': page['body']
+                        }
+                    })
+            
+            if requests:
+                slides_service.presentations().batchUpdate(
+                    presentationId=pres_id, 
+                    body={'requests': requests}
+                ).execute()
         
         url = f"https://docs.google.com/presentation/d/{pres_id}/edit"
         return {"success": True, "title": title, "url": url, "id": pres_id}
@@ -923,3 +973,102 @@ def pdf_to_images(pdf_bytes: bytes) -> list:
         print(f"PDF to image conversion error: {e}", file=sys.stderr)
         return []
 
+
+# -------------------------------------------------------------------------
+# Memo (Google Keep Alternative) using Drive Text Files
+# -------------------------------------------------------------------------
+
+MEMO_FOLDER_NAME = "KOTO_MEMOS"
+
+def get_or_create_memo_folder():
+    """Get the Memo folder ID, creating it if it doesn't exist."""
+    try:
+        creds = get_google_credentials()
+        drive_service = build('drive', 'v3', credentials=creds)
+        parent_folder_id = get_shared_folder_id()
+        
+        # Search for existing memo folder
+        query = f"name = '{MEMO_FOLDER_NAME}' and mimeType = 'application/vnd.google-apps.folder' and '{parent_folder_id}' in parents and trashed = false"
+        results = drive_service.files().list(q=query, fields='files(id)').execute()
+        files = results.get('files', [])
+        
+        if files:
+            return files[0]['id']
+        
+        # Create new
+        folder_metadata = {
+            'name': MEMO_FOLDER_NAME,
+            'mimeType': 'application/vnd.google-apps.folder',
+            'parents': [parent_folder_id]
+        }
+        folder = drive_service.files().create(body=folder_metadata, fields='id', supportsAllDrives=True).execute()
+        return folder.get('id')
+    except Exception as e:
+        print(f"Memo folder error: {e}", file=sys.stderr)
+        return None
+
+def create_drive_memo(title, content):
+    """Create a text memo in KOTO_MEMOS folder"""
+    try:
+        folder_id = get_or_create_memo_folder()
+        if not folder_id:
+            return {"error": "メモフォルダの作成に失敗しました"}
+            
+        creds = get_google_credentials()
+        drive_service = build('drive', 'v3', credentials=creds)
+        
+        # Create text file
+        file_metadata = {
+            'name': title,
+            'mimeType': 'plain/text',
+            'parents': [folder_id]
+        }
+        
+        from googleapiclient.http import MediaIoBaseUpload
+        import io
+        media = MediaIoBaseUpload(io.BytesIO(content.encode('utf-8')), mimetype='plain/text', resumable=True)
+        
+        file = drive_service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id, webViewLink, webContentLink',
+            supportsAllDrives=True
+        ).execute()
+        
+        return {
+            "success": True, 
+            "message": f"メモ「{title}」を作成しました",
+            "url": file.get('webViewLink'),
+            "id": file.get('id')
+        }
+    except Exception as e:
+        return {"error": f"メモ作成エラー: {str(e)}"}
+
+def search_drive_memos(query_text):
+    """Search for text memos in KOTO_MEMOS folder"""
+    try:
+        folder_id = get_or_create_memo_folder()
+        if not folder_id:
+            return {"error": "メモフォルダが見つかりません"}
+            
+        creds = get_google_credentials()
+        drive_service = build('drive', 'v3', credentials=creds)
+        
+        # Search for files containing text in the folder
+        query = f"'{folder_id}' in parents and fullText contains '{query_text}' and trashed = false"
+        results = drive_service.files().list(
+            q=query,
+            fields='files(id, name, webViewLink, createdTime)',
+            orderBy='createdTime desc',
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True
+        ).execute()
+        
+        files = results.get('files', [])
+        return {
+            "success": True,
+            "count": len(files),
+            "memos": files
+        }
+    except Exception as e:
+        return {"error": f"メモ検索エラー: {str(e)}"}
