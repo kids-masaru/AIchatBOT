@@ -25,6 +25,7 @@ AKI_CORE_ROLE = """
 - get_file_content(file_id): ファイルの中身を確認
 - make_folder(folder_name): 新規フォルダ作成
 - move_file(file_id, folder_id): ファイル移動
+- rename_file(file_id, new_name): ファイル名変更
 
 【プロセス: 探し物】
 1. ユーザーの曖昧な記憶から検索クエリを推測して `find_files`。
@@ -32,9 +33,8 @@ AKI_CORE_ROLE = """
 3. 見つかればリンクと共に提示。
 
 【プロセス: 整理整頓】
-1. 散らかっている場所（または指定されたファイル群）を特定。
-2. ファイルの内容を確認し、分類ルール（日付別、プロジェクト別など）を決定。
-3. 必要なフォルダを作り、移動を実行。
+1. 散らかったファイルや「無題」のファイルを見つける。
+2. 内容を確認し、適切な名前に `rename_file` したり、適切なフォルダに `move_file` したりする。
 """
 
 # --- Tool Wrappers with Proper Type Hints ---
@@ -89,13 +89,26 @@ def move_file(file_id: str, folder_id: str) -> dict:
     from tools.google_ops import move_drive_file
     return move_drive_file(file_id, folder_id)
 
+def rename_file(file_id: str, new_name: str) -> dict:
+    """Rename a file or folder in Google Drive.
+    
+    Args:
+        file_id: The ID of the file/folder to rename
+        new_name: The new name to verify
+    
+    Returns:
+        Dictionary with rename result
+    """
+    from tools.google_ops import rename_file
+    return rename_file(file_id, new_name)
+
 
 class LibrarianAgent:
     def __init__(self):
         self.model_name = "gemini-3-flash-preview"
         self.client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
         # Use wrapper functions with proper type hints
-        self.tools = [find_files, get_file_content, make_folder, move_file]
+        self.tools = [find_files, get_file_content, make_folder, move_file, rename_file]
         
     def run(self, user_request: str, chat_history: list = None) -> str:
         """

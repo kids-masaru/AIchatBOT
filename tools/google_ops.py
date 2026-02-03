@@ -280,6 +280,32 @@ def move_drive_file(file_id, folder_id):
         return {"error": f"ファイル移動中にエラーが発生しました: {str(e)}"}
 
 
+def rename_file(file_id, new_name):
+    """Rename a file or folder in Google Drive"""
+    try:
+        creds = get_google_credentials()
+        if not creds:
+             return {"error": "Google認証に失敗しました。"}
+             
+        drive_service = build('drive', 'v3', credentials=creds)
+        
+        file = drive_service.files().update(
+            fileId=file_id,
+            body={'name': new_name},
+            fields='id, name, mimeType',
+            supportsAllDrives=True
+        ).execute()
+        
+        return {
+            "success": True, 
+            "id": file.get('id'),
+            "name": file.get('name'),
+            "message": f"名前を「{file.get('name')}」に変更しました"
+        }
+    except Exception as e:
+        return {"error": f"名前変更中にエラーが発生しました: {str(e)}"}
+
+
 def search_drive(query):
     """Search Google Drive for files"""
     try:

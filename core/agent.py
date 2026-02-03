@@ -621,6 +621,19 @@ def doc_replace_text(file_id: str, replacements: dict) -> dict:
     from tools.template_ops import replace_placeholders
     return replace_placeholders(file_id, replacements)
 
+def rename_file(file_id: str, new_name: str) -> dict:
+    """Rename a file or folder in Google Drive.
+    
+    Args:
+        file_id: The ID of the file/folder to rename
+        new_name: The new name
+    
+    Returns:
+        Dictionary with rename result
+    """
+    from tools.google_ops import rename_file
+    return rename_file(file_id, new_name)
+
 # All available tools for Koto
 KOTO_TOOLS = [
     calculate,
@@ -634,6 +647,7 @@ KOTO_TOOLS = [
     create_google_slide,
     create_drive_folder,
     move_drive_file,
+    rename_file,  # Added
     search_drive,
     list_gmail,
     get_gmail_body,
@@ -693,21 +707,24 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
     personality_section = f"\n【設定された人格・役割（KOTO）】\n{personality}\n"
     master_prompt_section = f"\n【マスタープロンプト（特別指示）】\n{master_prompt}\n" if master_prompt else ""
     
-    # Current Date/Time context (CRITICAL for model awareness)
     now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S (%A)')
     time_context = f"\n【★現在日時★】\n本日は {now_str} です。ユーザーから「今日」「明日」と言われたらこの日付を基準にしてください。\n"
     
     # User Context (Profile)
-    from utils.vector_store import get_user_profile
+    from utils.vector_store import get_user_profile, get_context_summary
     user_data = get_user_profile(user_id)
     profile_text = user_data.get('profile', '') if isinstance(user_data, dict) else ''
     profile_section = f"\n【ユーザープロファイル（過去の分析結果）】\n{profile_text}\n" if profile_text else ""
+    
+    # Memory Context (RAG)
+    memory_text = get_context_summary(user_id, user_message)
+    memory_section = f"\n{memory_text}\n" if memory_text else ""
     
     user_name = config.get('user_name', 'ユーザー')
     user_name_section = f"\n【ユーザーの名前】\n{user_name}さん\n"
     
     # Assemble Full System Prompt
-    full_system_prompt = BASE_SYSTEM_PROMPT + time_context + personality_section + profile_section + user_name_section + master_prompt_section
+    full_system_prompt = BASE_SYSTEM_PROMPT + time_context + personality_section + profile_section + memory_section + user_name_section + master_prompt_section
     
     # ★SYSTEM CAPABILITIES OVERRIDE (To fix config sync issues)★
     full_system_prompt += """
