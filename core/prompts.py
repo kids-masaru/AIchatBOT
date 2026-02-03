@@ -58,11 +58,11 @@ TOOLS = [
     },
     {
         "name": "consult_fumi",
-        "description": "【資料作成の専門家】Googleドキュメント、スプレッドシート、スライドの作成や、ドライブ内の情報のリサーチを依頼します。",
+        "description": "【資料作成の専門家】Googleドキュメント、スプレッドシート、スライドの作成や、Google Keepメモの作成・検索を依頼します。",
         "parameters": {
             "type": "object",
             "properties": {
-                "request": {"type": "string", "description": "Fumiへの依頼内容（例: '〜についてのリサーチ資料を作って'）"}
+                "request": {"type": "string", "description": "Fumiへの依頼内容（例: '〜についてのリサーチ資料を作って', 'Keepにメモして'）"}
             },
             "required": ["request"]
         }
@@ -102,11 +102,11 @@ TOOLS = [
     },
     {
         "name": "consult_rina",
-        "description": "【スケジュールの専門家】Googleカレンダーの予定確認、作成、日程調整、リマインダー設定を依頼します。",
+        "description": "【スケジュールの専門家】Googleカレンダーの予定管理や、Google Tasks（ToDo）の管理を依頼します。",
         "parameters": {
             "type": "object",
             "properties": {
-                "request": {"type": "string", "description": "Rinaへの依頼内容（例: '来週の空き時間を教えて', '明日の10時に会議入れて'）"}
+                "request": {"type": "string", "description": "Rinaへの依頼内容（例: '来週の空き時間を教えて', 'タスクを追加して'）"}
             },
             "required": ["request"]
         }

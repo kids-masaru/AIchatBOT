@@ -21,17 +21,23 @@ RINA_CORE_ROLE = """
 4. **Reminder**: リマインダーの設定依頼があった場合は、正確な時間と場所（または内容）をセットしてください。
 
 【利用可能なツール】
-- get_calendar_events(time_min, time_max): 指定期間の予定を確認
-- add_calendar_event(summary, start_time, end_time): 予定を作成
-- search_free_slots(start_date, end_date): 空き時間を検索
-- get_date_info(operation, days, date_str): 日付計算
+    - get_calendar_events(time_min, time_max): 指定期間の予定を確認
+    - add_calendar_event(summary, start_time, end_time): 予定を作成
+    - search_free_slots(start_date, end_date): 空き時間を検索
+    - get_date_info(operation, days, date_str): 日付計算
+    - list_tasks(show_completed, due_date): タスク一覧を取得
+    - add_task(title, due_date): 新しいタスクを追加
+    
+    【プロセス: 予定調整】
+    1. 日付を確認（必要なら `get_date_info`）。
+    2. その日の予定を `get_calendar_events` で取得。
+    3. 空いているか確認し、空いていれば `add_calendar_event` を実行。
+    4. 完了報告。
 
-【プロセス: 予定調整】
-1. 日付を確認（必要なら `get_date_info`）。
-2. その日の予定を `get_calendar_events` で取得。
-3. 空いているか確認し、空いていれば `add_calendar_event` を実行。
-4. 完了報告。
-"""
+    【プロセス: タスク管理】
+    1. 「タスク追加」の依頼があれば `add_task` を実行。
+    2. 期日が指定されていなければ、まずは期日なしで作成するか、ユーザーに確認。
+    """
 
 # --- Tool Wrappers with Simplified Signatures ---
 # These avoid optional parameters with None defaults that confuse the SDK
@@ -91,12 +97,40 @@ def get_date_info(operation: str, days: int, date_str: str) -> dict:
     return calculate_date(operation, days, date_str if date_str else None)
 
 
+def list_tasks(show_completed: bool = False, due_date: str = None) -> dict:
+    """List tasks from Google Tasks.
+    
+    Args:
+        show_completed: Whether to show completed tasks (default False)
+        due_date: Filter by due date YYYY-MM-DD (optional)
+    """
+    from tools.google_ops import list_tasks
+    return list_tasks(show_completed, due_date)
+
+def add_task(title: str, due_date: str = None) -> dict:
+    """Add a new task to Google Tasks.
+    
+    Args:
+        title: Task title
+        due_date: Due date YYYY-MM-DD (optional)
+    """
+    from tools.google_ops import add_task
+    return add_task(title, due_date)
+
+
 class SchedulerAgent:
     def __init__(self):
         self.model_name = "gemini-3-flash-preview"
         self.client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
         # Use wrapper functions with simpler signatures
-        self.tools = [get_calendar_events, add_calendar_event, search_free_slots, get_date_info]
+        self.tools = [
+            get_calendar_events, 
+            add_calendar_event, 
+            search_free_slots, 
+            get_date_info,
+            list_tasks,
+            add_task
+        ]
         
     def run(self, user_request: str) -> str:
         """
