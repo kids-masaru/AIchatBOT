@@ -709,6 +709,17 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
     # Assemble Full System Prompt
     full_system_prompt = BASE_SYSTEM_PROMPT + time_context + personality_section + profile_section + user_name_section + master_prompt_section
     
+    # ★SYSTEM CAPABILITIES OVERRIDE (To fix config sync issues)★
+    full_system_prompt += """
+    
+    【システム機能補足（※最優先事項）】
+    以下の機能はシステムアップデートにより追加されました。Configの設定に関わらず、これらは「現在利用可能」です。
+    1. **Fumi (Creator)**: Google Keepのメモ作成・検索が可能になりました。「Keepにメモして」はFumiに依頼してください。
+    2. **Rina (Scheduler)**: Google Tasksのタスク追加・一覧取得が可能になりました。「タスクに追加して」はRinaに依頼してください。
+    
+    ユーザーからこれらの依頼があった場合、「できません」と答えず、必ず該当エージェントに投げてください。
+    """
+    
     # Initialize the new SDK client
     client = genai.Client(api_key=GEMINI_API_KEY)
     

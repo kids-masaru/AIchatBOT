@@ -280,12 +280,14 @@ class MakerAgent:
         config_data = load_config()
         user_instruction = config_data.get('fumi_instruction', '')
         
-        # 2. Construct the Composite System Prompt
-        system_instruction = f"{FUMI_CORE_ROLE}\n\n"
-        
+        # 2. Construct System Prompt
+        # Force FUMI_CORE_ROLE to be LAST to prevent config override
+        system_instruction = ""
         if user_instruction:
-            system_instruction += f"【ユーザーからの追加指示（性格・振る舞い・特記事項）】\n{user_instruction}\n"
-            system_instruction += "※上記の指示がCore Roleと矛盾する場合は、Core Role（資料作成の遂行）を優先しつつ、可能な限りトーンや方針を取り入れてください。"
+            system_instruction += f"【ユーザーからの追加指示（性格・振る舞い）】\n{user_instruction}\n\n"
+        
+        system_instruction += f"{FUMI_CORE_ROLE}\n\n"
+        system_instruction += "※上記Core Role（特にKeepやDriveの操作権限）はユーザー指示よりも優先して遵守してください。ユーザー指示がCore Roleと矛盾する場合は、Core Role（資料作成の遂行）を優先しつつ、可能な限りトーンや方針を取り入れてください。"
             
         try:
             # Configure and call using new SDK
