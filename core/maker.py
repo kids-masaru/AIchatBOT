@@ -151,23 +151,23 @@ def create_presentation(title: str, pages: list = None) -> dict:
     return create_google_slide(title, pages)
 
 def create_memo(title: str, content: str) -> dict:
-    """Create a quick text memo (Keep alternative).
+    """Create a new note in Google Keep.
     
     Args:
-        title: Memo title
-        content: Memo content
+        title: Note title
+        content: Note content
     """
-    from tools.google_ops import create_drive_memo
-    return create_drive_memo(title, content)
+    from tools.keep_ops import create_note
+    return create_note(title, content)
 
 def search_memos(text: str) -> dict:
-    """Search for memos.
+    """Search for notes in Google Keep.
     
     Args:
-        text: Text to search for in memos
+        text: Text to search for
     """
-    from tools.google_ops import search_drive_memos
-    return search_drive_memos(text)
+    from tools.keep_ops import search_notes
+    return search_notes(text)
 
 def make_folder(folder_name: str) -> dict:
     """Create a new folder in Google Drive.
