@@ -48,6 +48,8 @@ FUMI_CORE_ROLE = """
 - move_file(file_id, folder_id): ファイルを特定のフォルダへ移動
 - list_templates(): 登録済みテンプレート一覧を表示
 - replace_doc_text(file_id, replacements): ドキュメント内のプレースホルダー（{{宛名}}など）を置換
+- create_memo(title, content): Google Keepにメモを作成
+- search_memos(text): Google Keepのメモを検索
 
 【⛔️ 禁止事項 / STRICT PROHIBITIONS ⛔️】
 1. **過去データの流用禁止**: ユーザーの過去のファイル（自分や他の人が作った契約書や領収書など）をテンプレートとして使用することは**厳禁**です。個人情報流出の原因になります。
