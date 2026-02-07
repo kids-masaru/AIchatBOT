@@ -775,7 +775,25 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
         )
         
         # Extract text response
-        response_text = response.text if hasattr(response, 'text') else str(response)
+        # Handle cases where response.text is None (e.g. Function Calls)
+        response_text = ""
+        if hasattr(response, 'text') and response.text:
+            response_text = response.text
+        else:
+            # Fallback for Function Calls or empty responses
+            if hasattr(response, 'candidates') and response.candidates:
+                # Check for function calls in the first candidate
+                candidate = response.candidates[0]
+                if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                    parts = candidate.content.parts
+                    if parts and any(hasattr(part, 'function_call') and part.function_call for part in parts):
+                        response_text = "（ツールを実行しました）"
+                    else:
+                        response_text = str(response)
+                else:
+                    response_text = str(response)
+            else:
+                 response_text = "（応答がありませんでした）"
         
         # Log response
         add_message(user_id, "model", response_text)
@@ -789,6 +807,12 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
             pass
         
         return response_text
+        
+    except Exception as e:
+        print(f"Gemini SDK error: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        return f"ちょっとエラーが出ちゃいました...😢\nDEBUG: {str(e)}"
         
     except Exception as e:
         print(f"Gemini SDK error: {e}", file=sys.stderr)

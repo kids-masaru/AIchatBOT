@@ -36,7 +36,22 @@ def load_all_history():
     if HISTORY_FILE.exists():
         try:
             with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
-                _history_cache = defaultdict(list, json.load(f))
+                loaded_data = json.load(f)
+                
+                # Sanitize history (Auto-heal corrupted data)
+                sanitized = False
+                for user_id, messages in loaded_data.items():
+                    for msg in messages:
+                        if msg.get("text") is None:
+                            msg["text"] = "(Restored empty message)"
+                            sanitized = True
+                
+                if sanitized:
+                    print("Fixed corrupted history entries.", file=sys.stderr)
+                    # We don't save immediately here to avoid write loops, 
+                    # but it will be saved on next message add.
+                
+                _history_cache = defaultdict(list, loaded_data)
         except Exception as e:
             print(f"Error loading history: {e}")
             _history_cache = defaultdict(list)
