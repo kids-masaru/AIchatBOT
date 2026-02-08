@@ -842,6 +842,34 @@ def read_drive_file(file_id: str):
             while done is False:
                 status, done = downloader.next_chunk()
             content = fh.getvalue().decode('utf-8')
+        
+        elif mime_type == 'application/vnd.google-apps.spreadsheet':
+            # Google Sheets API を使用してセル内容を取得
+            sheets_service = build('sheets', 'v4', credentials=creds)
+            
+            # シートのメタデータを取得（全シート名取得）
+            spreadsheet = sheets_service.spreadsheets().get(spreadsheetId=file_id).execute()
+            sheets_list = spreadsheet.get('sheets', [])
+            
+            all_content = []
+            for sheet in sheets_list:
+                sheet_name = sheet['properties']['title']
+                # 各シートのデータを取得
+                try:
+                    result = sheets_service.spreadsheets().values().get(
+                        spreadsheetId=file_id,
+                        range=f"'{sheet_name}'!A:ZZ"  # 広範囲を取得
+                    ).execute()
+                    values = result.get('values', [])
+                    
+                    if values:
+                        all_content.append(f"=== シート: {sheet_name} ===")
+                        for row in values:
+                            all_content.append(" | ".join(str(cell) for cell in row))
+                except Exception as sheet_err:
+                    all_content.append(f"=== シート: {sheet_name} (読み込みエラー: {sheet_err}) ===")
+            
+            content = "\n".join(all_content)
             
         else:
             return {"error": f"未対応のファイル形式です: {mime_type}"}
