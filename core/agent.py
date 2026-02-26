@@ -170,6 +170,11 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
     if not GEMINI_API_KEY:
         return "エラー: GEMINI_API_KEYが設定されていません。"
 
+    from utils.vector_store import save_conversation, get_user_profile, get_context_summary
+    
+    # Save input to memory
+    save_conversation(user_id, "user", user_message)
+
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
         
@@ -184,7 +189,6 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
         master_prompt = config.get("koto_master_prompt", "")
         now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S (%A)')
         
-        from utils.vector_store import get_user_profile, get_context_summary
         user_data = get_user_profile(user_id)
         profile_text = user_data.get('profile', '')
         memory_text = get_context_summary(user_id, user_message)
@@ -207,22 +211,10 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
                 system_text += f"- フォルダ名: {f_name} (ID: {f_id})\n  指示内容: {f_inst}\n\n"
 
         # 2. Config Config
-        # Automatic function calling
-        tool_config = types.ToolConfig(
-            function_calling_config=types.FunctionCallingConfig(
-                mode='AUTO'
-            )
-        )
-        
-        # Convert TOOLS definitions to Gemini Format if needed, or pass TOOLS directly if compatible
-        # google-genai SDK 0.x might take tools differently.
-        # Assuming we pass the functions or the schema.
-        # Let's pass the schema list 'TOOLS' from prompts.py
-        
         # 3. Call API
         # Prepare contents
         contents = []
-        for msg in history_data:
+        for msg in history_data[-10:]: # Recent history only to save tokens
             role = "model" if msg["role"] == "model" else "user"
             contents.append(types.Content(role=role, parts=[types.Part.from_text(text=msg["text"])]))
             
@@ -242,57 +234,82 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
             )
         ]
         
-        response = client.models.generate_content(
-            model="gemini-3-flash-preview",
-            contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=system_text,
-                tools=gemini_tools, 
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                    disable=False,
-                    maximum_remote_calls=None
-                ),
+        # Manual Dispatch Loop for robust tool calling
+        def _call_model(c):
+            return client.models.generate_content(
+                model="gemini-3-flash-preview",
+                contents=c,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_text,
+                    tools=gemini_tools, 
+                    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
+                )
             )
-        )
+
+        response = _call_model(contents)
         
-        # Handle Response (SDK handles function calling loops automatically? 
-        # Actually 'automatic_function_calling' in config handles it in newer SDKs, 
-        # BUT we need to provide the python functions for it to execute?
-        # Or does it return a FunctionCall part?
-        # The 'google.genai' SDK (Dec 2024+) supports automatic execution if we pass the functions list.
-        # But here I passed 'TOOLS' (schema). 
-        # If I pass schema, I have to handle execution loop manually?
-        # Let's stick to what was likely working or simplest:
-        # If we assume previous code used 'google.genai', it likely handled it or used the loop.
-        # Given "get_gemini_response" was complex before, let's implement a loop or standard handling.
-        
-        # Re-implementation of manual loop (safest if we don't have the exact old code)
-        # OR:
-        # response.text might be empty if there's a function call.
-        
-        # Let's trust the 'tool_config' and manual handling if needed, but let's try to pass the functions dict?
-        # Actually, for "gemini-2.0-flash-exp", passing 'tools=[list of callables]' is supported in some SDKs.
-        
-        if response.text:
-            text = response.text
-            add_message(user_id, "model", text)
-            return text
+        # Iterative tool handling (Max 5 turns to prevent loops)
+        for _ in range(5):
+            # Check if model wants to call a function
+            candidates = response.candidates
+            if not candidates or not candidates[0].content or not candidates[0].content.parts:
+                break
+                
+            parts = candidates[0].content.parts
+            function_calls = [p.function_call for p in parts if p.function_call]
             
-        # If no text, maybe function calls?
-        # (This part is tricky without seeing the original `core/agent.py` exactly.
-        # I will return a placeholder if function calling logic is needed but missing.
-        # But the user said "restore it".
-        # I'll rely on the manual dispatcher we defined `KOTO_TOOLS` and hope the user tests it.)
+            if not function_calls:
+                break
+                
+            # Add model's thought/call to context
+            contents.append(response.candidates[0].content)
+            
+            tool_responses = []
+            for fc in function_calls:
+                fn_name = fc.name
+                fn_args = fc.args
+                print(f"[Agent] Executing tool: {fn_name} with {fn_args}", file=sys.stderr)
+                
+                if fn_name in KOTO_TOOLS:
+                    try:
+                        result = KOTO_TOOLS[fn_name](**fn_args)
+                        tool_responses.append(types.Part.from_function_response(
+                            name=fn_name,
+                            response={'result': result}
+                        ))
+                    except Exception as e:
+                        print(f"Tool error ({fn_name}): {e}", file=sys.stderr)
+                        tool_responses.append(types.Part.from_function_response(
+                            name=fn_name,
+                            response={'error': str(e)}
+                        ))
+                else:
+                    tool_responses.append(types.Part.from_function_response(
+                        name=fn_name,
+                        response={'error': f"Tool '{fn_name}' not found."}
+                    ))
+            
+            # Add results and call model again
+            contents.append(types.Content(role="user", parts=tool_responses))
+            response = _call_model(contents)
+
+        # Final Response
+        final_text = ""
+        if response.text:
+            final_text = response.text
+        else:
+            # Fallback for complex responses without direct text attribute
+            for part in response.candidates[0].content.parts:
+                if part.text:
+                    final_text += part.text
         
-        # Simplified Fallback: For now, return text. If tool use is needed, 
-        # we might need to restore the *exact* old `agent.py`.
-        # Since I viewed `agent.py` at the very beginning (Step 1), I have some memory of it?
-        # Step 1 view_file showed:
-        # client = genai.Client(api_key=GEMINI_API_KEY)
-        # response = client.models.generate_content(...)
-        # It was using 'gemini-3-flash-preview'.
+        if final_text:
+            add_message(user_id, "model", final_text)
+            save_conversation(user_id, "model", final_text)
+            return final_text
         
-        return response.text if response.text else "申し訳ありません、うまく応答できませんでした。"
+        return "申し訳ありません、うまく応答を生成できませんでした。"
 
     except Exception as e:
+        print(f"Gemini API Error: {e}", file=sys.stderr)
         return f"エラーが発生しました: {e}"
