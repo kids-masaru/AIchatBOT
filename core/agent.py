@@ -142,7 +142,7 @@ def analyze_document_layout(image_data: bytes, mime_type: str) -> dict:
 JSONでの出力は必須ではありませんが、構造がわかるように記述してください。"""
 
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-3-flash-preview",
             contents=[
                 types.Content(
                     role="user",
@@ -240,7 +240,7 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
         # If it fails, we fix it.
         
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-3-flash-preview",
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_text,
