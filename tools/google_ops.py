@@ -306,7 +306,7 @@ def rename_file(file_id, new_name):
         return {"error": f"名前変更中にエラーが発生しました: {str(e)}"}
 
 
-def search_drive(query):
+def search_drive(query, folder_id=None):
     """Search Google Drive for files"""
     try:
         creds = get_google_credentials()
@@ -318,10 +318,16 @@ def search_drive(query):
         # Escape single quotes in query to prevent syntax errors
         safe_query = query.replace("'", "\\'")
         
+        # Query construction
+        q_str = f"name contains '{safe_query}' and trashed=false"
+        if folder_id:
+            q_str += f" and '{folder_id}' in parents"
+            
         # Search includes Shared Drives
+        # Limit pageSize to 30 to prevent Gemini token exhaustion
         results = drive_service.files().list(
-            q=f"name contains '{safe_query}' and trashed=false",
-            pageSize=1000,
+            q=q_str,
+            pageSize=30,
             fields="files(id, name, mimeType, webViewLink, modifiedTime)",
             corpora='allDrives',
             includeItemsFromAllDrives=True,
@@ -337,10 +343,10 @@ def search_drive(query):
             for f in files:
                 expanded_results.append(f)
                 if f.get('mimeType') == 'application/vnd.google-apps.folder':
-                    # List children
+                    # List children - restrict to 20 to prevent token explosion
                     children_res = drive_service.files().list(
                         q=f"'{f['id']}' in parents and trashed=false",
-                        pageSize=1000, 
+                        pageSize=20, 
                         fields="files(id, name, mimeType, webViewLink, modifiedTime)",
                         supportsAllDrives=True,
                         includeItemsFromAllDrives=True

@@ -1,10 +1,10 @@
 """
-Profiler Agent (The Biographer)
-Analyzes conversation history to build and update the user's psychological profile.
+Koto Profiler (Gemini Version)
+Analyzes conversation history to update user profiles (psychological/preference models).
 """
 import os
-import json
 import sys
+import json
 from datetime import datetime
 from typing import Dict, List, Optional
 from google import genai
@@ -12,9 +12,6 @@ from utils.vector_store import _get_index, GeminiEmbedder
 
 # Configure Gemini
 api_key = os.environ.get("GEMINI_API_KEY")
-# Note: google.genai Client handles config internally per instance usually.
-
-PROFILE_FILE = "user_profile_data.json"
 
 class ProfilerAgent:
     def __init__(self):
@@ -26,7 +23,7 @@ class ProfilerAgent:
         else:
             self.client = genai.Client(api_key=api_key)
             
-        self.model_name = 'gemini-3-flash-preview'
+        self.model_name = 'gemini-2.0-flash-exp'
         
     def run_analysis(self, user_id: str, days_back: int = 1) -> Dict:
         """Analyze recent conversations and update profile"""
@@ -80,6 +77,14 @@ class ProfilerAgent:
             print(f"Profiler Log Fetch Error: {e}", file=sys.stderr)
             return []
 
+    def _load_current_profile(self, user_id: str) -> Dict:
+        from utils.vector_store import get_user_profile
+        return get_user_profile(user_id)
+
+    def _save_profile(self, user_id: str, profile: Dict):
+        from utils.vector_store import save_user_profile
+        save_user_profile(user_id, profile)
+
     def _analyze_and_merge(self, current_profile: Dict, logs: List[str]) -> Dict:
         """Ask Gemini to update the profile based on new logs"""
         
@@ -90,7 +95,6 @@ class ProfilerAgent:
         from utils.sheets_config import load_config
         config = load_config()
         
-        # [Config Update] Use shiori_instruction
         system_prompt = config.get('shiori_instruction', """
         あなたは「栞（しおり）」という名の、心優しい伝記作家です。
         対象人物（ユーザー）の会話記録（Log）を読み、現在の人物プロファイル（Profile）を更新してください。
@@ -126,7 +130,8 @@ class ProfilerAgent:
             # Use new SDK method
             response = self.client.models.generate_content(
                 model=self.model_name,
-                contents=prompt
+                contents=prompt,
+                config={'response_mime_type': 'application/json'}
             )
             text = response.text.strip()
             
@@ -145,14 +150,5 @@ class ProfilerAgent:
             # Return current profile instead of crashing, so we don't wipe data
             return current_profile
 
-    def _load_current_profile(self, user_id: str) -> Dict:
-        """Load from persistent vector store"""
-        from utils.vector_store import get_user_profile
-        return get_user_profile(user_id)
-
-    def _save_profile(self, user_id: str, profile: Dict):
-        """Save to persistent vector store"""
-        from utils.vector_store import save_user_profile
-        save_user_profile(user_id, profile)
-
+# Global Instance
 profiler = ProfilerAgent()

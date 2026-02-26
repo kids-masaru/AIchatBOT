@@ -1,34 +1,24 @@
 """
-Vector Store - Pinecone-based persistent memory for conversation history
-Enables RAG (Retrieval Augmented Generation) for KOTO
-Uses Gemini API for embeddings and Pinecone for storage
+Vector Store Management using Pinecone and Gemini Embeddings
 """
 import os
 import sys
 import json
 import time
-import urllib.request
-from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
+from google import genai
+from pinecone import Pinecone, ServerlessSpec
 
-# Lazy loading to avoid slow startup
-_pinecone_index = None
-_init_error = None
-
+# Config
+PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
+PINECONE_ENV = "us-east-1" 
 INDEX_NAME = "koto-memory"
-DIMENSION = 768  # Gemini text-embedding-004 dimension
-PINECONE_API_KEY = os.environ.get('PINECONE_API_KEY', '')
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
-
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 class GeminiEmbedder:
-    """Helper class to get embeddings from Gemini API"""
-    
     def embed_text(self, text: str) -> List[float]:
-        """Get embedding for a single text"""
         if not GEMINI_API_KEY:
             return self._simple_embedding(text)
-            
         try:
             return self._get_gemini_embedding(text)
         except Exception as e:
@@ -36,260 +26,53 @@ class GeminiEmbedder:
             return self._simple_embedding(text)
 
     def _get_gemini_embedding(self, text: str) -> List[float]:
-        """Get embedding from Gemini API"""
-        # Fallback to embedding-001 if text-embedding-004 is 404
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/embedding-001:embedContent?key={GEMINI_API_KEY}"
-        
-        data = {
-            "model": "models/embedding-001",
-            "content": {"parts": [{"text": text[:2000]}]}  # Truncate to avoid token limits
-        }
-        
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(data).encode('utf-8'),
-            headers={'Content-Type': 'application/json'},
-            method='POST'
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        # Use 'text-embedding-004' (standard Gemini embedding)
+        result = client.models.embed_content(
+            model="text-embedding-004",
+            contents=text
         )
-        
-        with urllib.request.urlopen(req, timeout=10) as res:
-            result = json.loads(res.read().decode('utf-8'))
-            return result.get('embedding', {}).get('values', [])
-    
-    def _simple_embedding(self, text: str) -> List[float]:
-        """Fallback: Simple hash-based embedding (768 dimensions)"""
-        import hashlib
-        # Create a deterministic but simple embedding
-        hash_bytes = hashlib.sha256(text.encode('utf-8')).digest() * 24  # 768 bytes
-        return [b / 255.0 for b in hash_bytes[:768]]
+        return result.embeddings[0].values
 
+    def _simple_embedding(self, text: str, dim: int = 768) -> List[float]:
+        import hashlib
+        hash_obj = hashlib.sha256(text.encode())
+        hash_digest = hash_obj.digest()
+        
+        vector = []
+        for i in range(dim):
+            byte_val = hash_digest[i % len(hash_digest)]
+            float_val = (byte_val / 255.0) * 2 - 1 
+            vector.append(float_val)
+        return vector
+
+_pinecone_index = None
 
 def _get_index():
-    """Get or create Pinecone index (lazy load)"""
-    global _pinecone_index, _init_error
-    
-    if _pinecone_index is not None:
+    global _pinecone_index
+    if _pinecone_index:
         return _pinecone_index
         
     if not PINECONE_API_KEY:
-        _init_error = "PINECONE_API_KEY not set"
+        print("Pinecone API Key missing", file=sys.stderr)
         return None
-    
+        
     try:
-        from pinecone import Pinecone, ServerlessSpec
-        
         pc = Pinecone(api_key=PINECONE_API_KEY)
-        
-        # Check if index exists
-        existing_indexes = pc.list_indexes().names()
-        
-        if INDEX_NAME not in existing_indexes:
-            # Create index if not exists
-            print(f"Creating Pinecone index: {INDEX_NAME}...", file=sys.stderr)
-            pc.create_index(
-                name=INDEX_NAME,
-                dimension=DIMENSION,
-                metric="cosine",
-                spec=ServerlessSpec(
-                    cloud="aws",
-                    region="us-east-1"
-                )
+        if INDEX_NAME not in pc.list_indexes().names():
+             pc.create_index(
+                name=INDEX_NAME, 
+                dimension=768, 
+                metric='cosine',
+                spec=ServerlessSpec(cloud='aws', region='us-east-1')
             )
-            # Wait for index to be ready
-            while not pc.describe_index(INDEX_NAME).status['ready']:
-                time.sleep(1)
-        
         _pinecone_index = pc.Index(INDEX_NAME)
         return _pinecone_index
-        
     except Exception as e:
-        _init_error = str(e)
-        print(f"Error initializing Pinecone: {e}", file=sys.stderr)
+        print(f"Pinecone init error: {e}", file=sys.stderr)
         return None
 
-
 def save_conversation(user_id: str, role: str, text: str, metadata: Optional[Dict] = None) -> bool:
-    """Save conversation message to Pinecone"""
-    index = _get_index()
-    if index is None:
-        return False
-    
-    try:
-        # Generate embedding
-        embedder = GeminiEmbedder()
-        vector = embedder.embed_text(text)
-        
-        # Create unique ID
-        doc_id = f"{user_id}_{datetime.now().isoformat()}_{role}"
-        
-        # Prepare metadata
-        doc_metadata = {
-            "user_id": user_id,
-            "role": role,
-            "text": text, # Store text in metadata for retrieval
-            "timestamp": datetime.now().isoformat(),
-        }
-        if metadata:
-            doc_metadata.update(metadata)
-        
-        # Upsert to Pinecone
-        index.upsert(vectors=[(doc_id, vector, doc_metadata)])
-        
-        return True
-    except Exception as e:
-        print(f"Error saving to Pinecone: {e}", file=sys.stderr)
-        return False
-
-
-def search_relevant_context(user_id: str, query: str, n_results: int = 5) -> List[Dict]:
-    """Search for relevant past conversations"""
-    index = _get_index()
-    if index is None:
-        return []
-    
-    try:
-        # Generate embedding for query
-        embedder = GeminiEmbedder()
-        vector = embedder.embed_text(query)
-        
-        # Search Pinecone
-        results = index.query(
-            vector=vector,
-            top_k=n_results,
-            filter={"user_id": user_id},
-            include_metadata=True
-        )
-        
-        # Format results
-        relevant_context = []
-        for match in results.matches:
-            metadata = match.metadata or {}
-            relevant_context.append({
-                "text": metadata.get("text", ""),
-                "role": metadata.get("role", "unknown"),
-                "timestamp": metadata.get("timestamp", ""),
-                "relevance": match.score
-            })
-        
-        return relevant_context
-    except Exception as e:
-        print(f"Error searching Pinecone: {e}", file=sys.stderr)
-        return []
-
-
-def get_context_summary(user_id: str, query: str, max_tokens: int = 500) -> str:
-    """Get context summary for AI prompt"""
-    relevant = search_relevant_context(user_id, query, n_results=5)
-    
-    if not relevant:
-        return ""
-    
-    # Build context summary
-    context_parts = []
-    total_chars = 0
-    max_chars = max_tokens * 3
-    
-    # Sort by timestamp (oldest first) to maintain conversation flow
-    # or keep relevance order? Usually relevance is better for RAG, 
-    # but context flow is easier to read if sorted.
-    # Let's keep relevance for now as they are independent snippets.
-    
-    for item in relevant:
-        if total_chars >= max_chars:
-            break
-        
-        role_label = "ユーザー" if item["role"] == "user" else "KOTO"
-        text = item["text"][:200]
-        
-        entry = f"[{role_label}] {text}"
-        context_parts.append(entry)
-        total_chars += len(entry)
-    
-    if context_parts:
-        return "【過去の関連会話】\n" + "\n".join(context_parts) + "\n"
-    
-    return ""
-
-
-def get_collection_stats() -> Dict:
-    """Get Pinecone index stats"""
-    global _init_error
-    index = _get_index()
-    
-    if index is None:
-        return {"status": "not_initialized", "init_error": _init_error}
-    
-    try:
-        stats = index.describe_index_stats()
-        return {
-            "status": "ok",
-            "total_documents": stats.total_vector_count,
-            "collection_name": INDEX_NAME,
-            "provider": "pinecone"
-        }
-    except Exception as e:
-        return {"status": "error", "error": str(e)}
-
-# --- Profile Persistence (Phase 5) ---
-
-def get_user_profile(user_id: str) -> Dict:
-    """Retrieve user profile from Pinecone (stored as special vector)"""
-    index = _get_index()
-    if index is None:
-        return {}
-        
-    try:
-        # Fetch by specific ID
-        profile_id = f"profile:{user_id}"
-        fetch_response = index.fetch(ids=[profile_id])
-        
-        if profile_id in fetch_response.vectors:
-            vector_data = fetch_response.vectors[profile_id]
-            # Profile data is stored in metadata['json_data'] as string
-            if vector_data.metadata and 'json_data' in vector_data.metadata:
-                return json.loads(vector_data.metadata['json_data'])
-                
-        return {}
-    except Exception as e:
-        print(f"Error fetching profile: {e}", file=sys.stderr)
-        return {}
-
-def save_user_profile(user_id: str, profile_data: Dict) -> bool:
-    """Save user profile to Pinecone"""
-    index = _get_index()
-    if index is None:
-        return False
-        
-    try:
-        profile_id = f"profile:{user_id}"
-        
-        # Serialize profile to JSON string
-        json_str = json.dumps(profile_data, ensure_ascii=False)
-        
-        # Use a dummy vector (all 0.1s to avoid "all integers zero" validation error)
-        # Pinecone requires a vector, and it must not be all zeros in some metric configs.
-        dummy_vector = [0.1] * DIMENSION
-        
-        # Upsert
-        index.upsert(vectors=[(
-            profile_id, 
-            dummy_vector, 
-            {
-                "type": "profile",
-                "user_id": user_id,
-                "timestamp": datetime.now().isoformat(),
-                "json_data": json_str # Store actual data here
-            }
-        )])
-        return True
-    except Exception as e:
-        print(f"Error saving profile: {e}", file=sys.stderr)
-        return False
-
-# --- Knowledge Retrieval (Phase 6 - RAG) ---
-
-def save_knowledge_vector(doc_id: str, text: str, metadata: Dict) -> bool:
-    """Save knowledge document chunk to Pinecone (namespace='knowledge')"""
     index = _get_index()
     if index is None: return False
     
@@ -297,41 +80,106 @@ def save_knowledge_vector(doc_id: str, text: str, metadata: Dict) -> bool:
         embedder = GeminiEmbedder()
         vector = embedder.embed_text(text)
         
-        # Upsert to 'knowledge' namespace
-        index.upsert(
-            vectors=[(doc_id, vector, metadata)], 
-            namespace="knowledge"
-        )
+        timestamp = datetime.now().timestamp()
+        msg_id = f"{user_id}_{int(timestamp)}_{hash(text)}"
+        
+        meta = {
+            "user_id": user_id,
+            "role": role,
+            "text": text,
+            "timestamp": timestamp,
+            "type": "conversation"
+        }
+        if metadata:
+            meta.update(metadata)
+            
+        index.upsert(vectors=[(msg_id, vector, meta)])
         return True
     except Exception as e:
-        print(f"Error saving knowledge: {e}", file=sys.stderr)
+        print(f"Save conversation error: {e}", file=sys.stderr)
         return False
 
-def search_knowledge_base(query: str, n_results: int = 5) -> List[Dict]:
-    """Search knowledge base (namespace='knowledge')"""
+def search_similar_conversations(user_id: str, query_text: str, top_k: int = 5) -> List[Dict]:
     index = _get_index()
     if index is None: return []
     
     try:
         embedder = GeminiEmbedder()
-        vector = embedder.embed_text(query)
+        vector = embedder.embed_text(query_text)
         
-        results = index.query(
+        result = index.query(
             vector=vector,
-            top_k=n_results,
-            namespace="knowledge",
+            top_k=top_k,
+            filter={"user_id": user_id, "type": "conversation"},
             include_metadata=True
         )
         
-        hits = []
-        for match in results.matches:
-            if match.score > 0.5: # Relevance threshold
-                hits.append({
-                    "text": match.metadata.get("text", ""),
-                    "source": match.metadata.get("source", "unknown"),
-                    "score": match.score
-                })
-        return hits
+        matches = []
+        for match in result['matches']:
+            matches.append(match['metadata'])
+            
+        return matches
     except Exception as e:
-        print(f"Error searching knowledge: {e}", file=sys.stderr)
+        print(f"Search error: {e}", file=sys.stderr)
         return []
+
+def save_user_profile(user_id: str, profile_data: Dict) -> bool:
+    # Save as special document in Pinecone or separate DB?
+    # For now, let's assume it's stored in a separate namespace or just distinct ID
+    # But Pinecone overwrites by ID.
+    index = _get_index()
+    if index is None: return False
+    
+    try:
+        # Profile doesn't technically need embedding if we only fetch by ID,
+        # but we might want to search profiles? 
+        # For Koto, we usually just GET profile by ID.
+        # Let's use simple dummy vector or embed the summary.
+        
+        profile_text = json.dumps(profile_data, ensure_ascii=False)
+        embedder = GeminiEmbedder()
+        vector = embedder.embed_text(profile_text[:1000]) # Embed summary
+        
+        doc_id = f"profile_{user_id}"
+        meta = {
+            "user_id": user_id,
+            "type": "profile",
+            "profile_json": profile_text,
+            "updated_at": datetime.now().timestamp()
+        }
+        
+        index.upsert(vectors=[(doc_id, vector, meta)])
+        return True
+    except Exception as e:
+        print(f"Save profile error: {e}", file=sys.stderr)
+        return False
+
+def get_user_profile(user_id: str) -> Dict:
+    index = _get_index()
+    if index is None: return {}
+    
+    try:
+        doc_id = f"profile_{user_id}"
+        result = index.fetch(ids=[doc_id])
+        
+        if doc_id in result['vectors']:
+            json_str = result['vectors'][doc_id]['metadata']['profile_json']
+            return json.loads(json_str)
+        return {}
+    except Exception as e:
+        print(f"Get profile error: {e}", file=sys.stderr)
+        return {}
+    
+def get_context_summary(user_id: str, query: str) -> str:
+    """Get summarized context from RAG"""
+    matches = search_similar_conversations(user_id, query)
+    if not matches:
+        return ""
+        
+    summary = "【過去の関連会話】\n"
+    for m in matches:
+        role = "ユーザー" if m['role'] == 'user' else "コト"
+        summary += f"- {role}: {m['text']}\n"
+    return summary
+
+from datetime import datetime

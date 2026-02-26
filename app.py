@@ -18,10 +18,11 @@ load_dotenv()
 # Add project root to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from core.agent import get_gemini_response
+from core.agent import get_agent_response, get_gemini_response
 from utils.storage import clear_user_history
 from utils.sheets_config import load_config, save_config
 from tools.google_ops import search_drive
+from utils.queue import enqueue_message, process_queue_for_user
 from flask_cors import CORS
 
 app = Flask(__name__)
@@ -156,130 +157,110 @@ def get_line_message_content(message_id):
         return None
 
 
-def process_message_async(user_id, user_text, reply_token=None, message_id=None, message_type='text', filename=None):
-    """Process message (text or file) in background"""
+def process_batched_messages(user_id, tasks):
+    """Process a batch of queued messages for a user"""
     try:
-        print(f"Processing {message_type} from {user_id[:8]}", file=sys.stderr)
+        print(f"Processing {len(tasks)} batched messages for {user_id[:8]}", file=sys.stderr)
         
-        # Handle File Uploads
-        if message_type in ['image', 'file']:
-            reply_token_used = False
+        combined_text = ""
+        reply_tokens = []
+        last_image_data = None
+        last_image_mime = None
+        
+        for task in tasks:
+            message_type = task.get('type')
+            user_text = task.get('text', '')
+            reply_token = task.get('reply_token')
+            message_id = task.get('message_id')
+            filename = task.get('filename')
             
-            # 1. Download from LINE
-            content = get_line_message_content(message_id)
-            if not content:
-                print(f"Content download failed for {message_id}", file=sys.stderr)
-                if reply_token:
-                    reply_message(reply_token, "ごめんなさい、ファイルのダウンロードに失敗しました...😢")
-                return
-            
-            print(f"Downloaded content: {len(content)} bytes type: {type(content)}", file=sys.stderr)
-
-            # 2. Determine filename
-            import datetime
-            import mimetypes
-            
-            if not filename:
-                ext = 'jpg' if message_type == 'image' else 'dat'
-                timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-                filename = f"line_{timestamp}.{ext}"
-
-            # 3. Upload to Drive
-            from tools.google_ops import upload_file_to_drive
-            
-            # Detect MIME
-            mime = 'image/jpeg' if message_type == 'image' else None 
-            if not mime:
-                mime, _ = mimetypes.guess_type(filename)
+            if reply_token and reply_token not in reply_tokens:
+                reply_tokens.append(reply_token)
                 
-            if not mime: mime = 'application/octet-stream' # Fallback
-            
-            print(f"Uploading {filename} (mime={mime})", file=sys.stderr)
-            result = upload_file_to_drive(filename, content, mime_type=mime)
-            
-            if result.get("success"):
-                file_url = result.get("url")
-                file_id = result.get("file_id")
-                # User didn't say anything, but the act of uploading is the message.
-                # format as a system notification to the agent
-                # Include File ID for Maker Agent
-                user_text = f"【システム通知】ユーザーがファイルをアップロードしました。\nファイル名: {filename}\nファイルID: {file_id}\n保存先URL: {file_url}\n\nこのファイルはGoogle Driveに保存されました。Maker Agentを使って内容を読んだり要約したりできます。"
+            if message_type in ['image', 'file']:
+                # 1. Download from LINE
+                content = get_line_message_content(message_id)
+                if not content:
+                    print(f"Content download failed for {message_id}", file=sys.stderr)
+                    continue
                 
-                # If it's an image, pass content to Gemini for immediate understanding
-                image_data = None
-                image_mime = None
-                layout_analysis = None
-                
-                if message_type == 'image':
-                    image_data = content
-                    image_mime = mime
-                    user_text += "\nまた、この画像の内容は添付データとして送信されています。何が写っているか聞かれたら答えてください。"
+                # 2. Determine filename
+                import datetime
+                import mimetypes
+                if not filename:
+                    ext = 'jpg' if message_type == 'image' else 'dat'
+                    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                    filename = f"line_{timestamp}.{ext}"
                     
-                    # Perform document layout analysis for better recreation
-                    from core.agent import analyze_document_layout
-                    print("Analyzing document layout...", file=sys.stderr)
-                    layout_analysis = analyze_document_layout(content, mime)
-                    if layout_analysis.get("success"):
-                        if layout_analysis.get("structure"):
-                            user_text += f"\n\n【ドキュメント構造解析結果】\n```json\n{json.dumps(layout_analysis['structure'], ensure_ascii=False, indent=2)}\n```"
-                        else:
-                            user_text += f"\n\n【ドキュメント構造解析結果】\n{layout_analysis.get('raw', '')}"
-                        user_text += "\n\n★ユーザーが「同じ形式で作って」と言った場合は、上記の構造解析結果を参考に、レイアウトを可能な限り忠実に再現してください。"
-                        print("Layout analysis completed", file=sys.stderr)
+                # 3. Upload to Drive
+                from tools.google_ops import upload_file_to_drive
+                mime = 'image/jpeg' if message_type == 'image' else None 
+                if not mime:
+                    mime, _ = mimetypes.guess_type(filename)
+                if not mime: mime = 'application/octet-stream'
                 
-                # If it's a PDF, convert to image for visual analysis
-                elif mime == 'application/pdf':
-                    from tools.google_ops import pdf_to_images
-                    pdf_images = pdf_to_images(content)
-                    if pdf_images:
-                        # Use first page as the visual reference
-                        image_data, image_mime = pdf_images[0]
-                        user_text += f"\nまた、このPDFは画像に変換されて添付されています（{len(pdf_images)}ページ）。見た目やレイアウトを参考にできます。"
-                        print(f"PDF converted to {len(pdf_images)} images for vision", file=sys.stderr)
+                result = upload_file_to_drive(filename, content, mime_type=mime)
+                if result.get("success"):
+                    file_url = result.get("url")
+                    file_id = result.get("file_id")
+                    
+                    combined_text += f"\n【ファイルアップロード】\nファイル名: {filename}\nファイルID: {file_id}\n保存先URL: {file_url}\n"
+                    
+                    if message_type == 'image':
+                        last_image_data = content
+                        last_image_mime = mime
+                        combined_text += "※この画像の内容は添付データとして送信されています。\n"
                         
-                        # Perform document layout analysis for PDF too
                         from core.agent import analyze_document_layout
-                        print("Analyzing PDF document layout...", file=sys.stderr)
-                        layout_analysis = analyze_document_layout(image_data, image_mime)
-                        if layout_analysis.get("success"):
-                            if layout_analysis.get("structure"):
-                                user_text += f"\n\n【ドキュメント構造解析結果】\n```json\n{json.dumps(layout_analysis['structure'], ensure_ascii=False, indent=2)}\n```"
-                            else:
-                                user_text += f"\n\n【ドキュメント構造解析結果】\n{layout_analysis.get('raw', '')}"
-                            user_text += "\n\n★ユーザーが「同じ形式で作って」と言った場合は、上記の構造解析結果を参考に、レイアウトを可能な限り忠実に再現してください。"
-                            print("PDF layout analysis completed", file=sys.stderr)
+                        layout = analyze_document_layout(content, mime)
+                        if layout.get("success"):
+                            combined_text += f"【ドキュメント構造解析】\n{json.dumps(layout.get('structure') or layout.get('raw', ''), ensure_ascii=False)}\n"
+                            
+                    elif mime == 'application/pdf':
+                        from tools.google_ops import pdf_to_images
+                        pdf_images = pdf_to_images(content)
+                        if pdf_images:
+                            last_image_data, last_image_mime = pdf_images[0]
+                            combined_text += f"※このPDFの先頭ページは画像として添付されています。\n"
+                            from core.agent import analyze_document_layout
+                            layout = analyze_document_layout(last_image_data, last_image_mime)
+                            if layout.get("success"):
+                                combined_text += f"【PDFレイアウト解析】\n{json.dumps(layout.get('structure') or layout.get('raw', ''), ensure_ascii=False)}\n"
+                else:
+                    combined_text += f"\n【警告】ファイル '{filename}' の保存に失敗しました（{result.get('error')}）。\n"
+                    
+            elif message_type == 'text':
+                combined_text += f"\nユーザーの発言: {user_text}\n"
 
-            else:
-                error = result.get("error", "Unknown error")
-                print(f"Upload failed: {error}", file=sys.stderr)
-                if reply_token:
-                    reply_message(reply_token, f"ドライブへの保存に失敗しました...😢\n{error}")
-                return
-
-        # Normal Agent Flow (Text or converted System Text)
-        print(f"Agent Input: {user_text}", file=sys.stderr)
+        if not combined_text.strip():
+            return
+            
+        print(f"Agent Batched Input: {combined_text}", file=sys.stderr)
         
-        # Pass image data if available
-        ai_response = get_gemini_response(user_id, user_text, image_data=locals().get('image_data'), mime_type=locals().get('image_mime'))
+        # Pass the combined text to Koto
+        ai_response = get_gemini_response(
+            user_id, 
+            combined_text.strip(), 
+            image_data=last_image_data, 
+            mime_type=last_image_mime
+        )
         
-        print(f"Koto response: {ai_response[:100]}...", file=sys.stderr)
-        
-        # Try Reply API first
+        # Try sending response via the latest available reply token
         success = False
-        if reply_token:
+        valid_reply_token = reply_tokens[-1] if reply_tokens else None
+        
+        if valid_reply_token:
             try:
-                reply_message(reply_token, ai_response)
+                reply_message(valid_reply_token, ai_response)
                 success = True
             except Exception as e:
-                 # Token might have expired during upload/processing
                 print(f"Reply failed, trying Push: {e}", file=sys.stderr)
-        
-        # Fallback to Push
+                
         if not success:
             push_message(user_id, ai_response)
             
     except Exception as e:
-        print(f"Async processing error: {e}", file=sys.stderr)
+        print(f"Batched async processing error: {e}", file=sys.stderr)
         try:
             push_message(user_id, "ごめんなさい、エラーが出ちゃいました...😢")
         except:
@@ -321,32 +302,35 @@ def webhook():
             
             if message_type == 'text':
                 user_text = message.get('text', '')
-                print(f"User Text [{user_id[:8]}]: {user_text}", file=sys.stderr)
-                # Run in background thread to return 200 OK immediately
-                thread = threading.Thread(
-                    target=process_message_async,
-                    args=(user_id, user_text, reply_token)
-                )
-                thread.start()
+                print(f"User Text [{user_id[:8]} enqueueing]: {user_text}", file=sys.stderr)
+                enqueue_message(user_id, {
+                    'type': 'text',
+                    'text': user_text,
+                    'reply_token': reply_token
+                })
+                process_queue_for_user(user_id, process_batched_messages)
                 
             elif message_type == 'image':
                 message_id = message.get('id')
-                print(f"User Image [{user_id[:8]}] ID: {message_id}", file=sys.stderr)
-                thread = threading.Thread(
-                    target=process_message_async,
-                    args=(user_id, "", reply_token, message_id, 'image')
-                )
-                thread.start()
+                print(f"User Image [{user_id[:8]} enqueueing] ID: {message_id}", file=sys.stderr)
+                enqueue_message(user_id, {
+                    'type': 'image',
+                    'message_id': message_id,
+                    'reply_token': reply_token
+                })
+                process_queue_for_user(user_id, process_batched_messages)
                 
             elif message_type == 'file':
                 message_id = message.get('id')
                 filename = message.get('fileName')
-                print(f"User File [{user_id[:8]}] Name: {filename}", file=sys.stderr)
-                thread = threading.Thread(
-                    target=process_message_async,
-                    args=(user_id, "", reply_token, message_id, 'file', filename)
-                )
-                thread.start()
+                print(f"User File [{user_id[:8]} enqueueing] Name: {filename}", file=sys.stderr)
+                enqueue_message(user_id, {
+                    'type': 'file',
+                    'message_id': message_id,
+                    'filename': filename,
+                    'reply_token': reply_token
+                })
+                process_queue_for_user(user_id, process_batched_messages)
         
         elif event_type == 'follow':
             reply_token = event.get('replyToken')

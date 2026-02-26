@@ -40,17 +40,18 @@ AKI_CORE_ROLE = """
 # --- Tool Wrappers with Proper Type Hints ---
 # These provide clear signatures that the SDK can parse reliably
 
-def find_files(query: str) -> dict:
+def find_files(query: str, folder_id: str = None) -> dict:
     """Search for files in Google Drive.
     
     Args:
         query: Search keywords to find files (e.g., "議事録", "2026年予算")
+        folder_id: (Optional) Set this to a specific folder ID to restrict the search to that folder.
     
     Returns:
         Dictionary with list of found files including id, name, and links
     """
     from tools.google_ops import search_drive
-    return search_drive(query)
+    return search_drive(query, folder_id=folder_id)
 
 def get_file_content(file_id: str) -> dict:
     """Read the content of a file from Google Drive.
@@ -119,9 +120,20 @@ class LibrarianAgent:
         # 1. Load User Configuration
         config_data = load_config()
         user_instruction = config_data.get('aki_instruction', '')
+        knowledge_sources = config_data.get('knowledge_sources', [])
         
         # 2. Construct System Prompt
         system_instruction = f"{AKI_CORE_ROLE}\n\n"
+        
+        if knowledge_sources:
+            system_instruction += "【登録済みの重要フォルダ指定（Dashboard Knowledge Sources）】\n"
+            system_instruction += "以下のフォルダにはユーザーから特別な指示が割り当てられています。\n"
+            system_instruction += "検索や移動を行う際、対象が以下の指示に該当する場合は、全体検索ではなく必ずこのfolder_idを指定して `find_files(query, folder_id)` を実行してください。\n"
+            for source in knowledge_sources:
+                f_name = source.get('name', 'Unknown')
+                f_id = source.get('id', '')
+                f_inst = source.get('instruction', '')
+                system_instruction += f"- フォルダ名: {f_name} (ID: {f_id})\n  指示: {f_inst}\n\n"
         
         if user_instruction:
             system_instruction += f"【ユーザーからの追加指示（性格・振る舞い）】\n{user_instruction}\n"
