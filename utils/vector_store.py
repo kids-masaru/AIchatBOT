@@ -12,7 +12,7 @@ from pinecone import Pinecone, ServerlessSpec
 # Config
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
 PINECONE_ENV = "us-east-1" 
-INDEX_NAME = "koto-memory"
+INDEX_NAME = "koto-memory-v2"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 class GeminiEmbedder:
@@ -27,9 +27,9 @@ class GeminiEmbedder:
 
     def _get_gemini_embedding(self, text: str) -> List[float]:
         client = genai.Client(api_key=GEMINI_API_KEY)
-        # Use 'text-embedding-004' (standard Gemini embedding)
+        # Use 'gemini-embedding-001' (widely available)
         result = client.models.embed_content(
-            model="models/text-embedding-004",
+            model="models/gemini-embedding-001",
             contents=text
         )
         return result.embeddings[0].values
@@ -62,7 +62,7 @@ def _get_index():
         if INDEX_NAME not in pc.list_indexes().names():
              pc.create_index(
                 name=INDEX_NAME, 
-                dimension=768, 
+                dimension=3072, 
                 metric='cosine',
                 spec=ServerlessSpec(cloud='aws', region='us-east-1')
             )

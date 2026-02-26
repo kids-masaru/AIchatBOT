@@ -233,18 +233,21 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
         
         contents.append(types.Content(role="user", parts=curr_parts))
 
-        # We actually need to map the KOTO_TOOLS dictionary to the tools argument in a specific way for the SDK.
-        # But simpler: provide the TOOLS schema list from prompts.py
-        
-        # NOTE: For this reversion, I am using the standard way I recall for 'google.genai'.
-        # If it fails, we fix it.
+        # Wrap TOOLS into the format required by the SDK
+        gemini_tools = [
+            types.Tool(
+                function_declarations=[
+                    types.FunctionDeclaration(**t) for t in TOOLS
+                ]
+            )
+        ]
         
         response = client.models.generate_content(
             model="gemini-3-flash-preview",
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_text,
-                tools=TOOLS, # Passing schema list
+                tools=gemini_tools, 
                 automatic_function_calling=types.AutomaticFunctionCallingConfig(
                     disable=False,
                     maximum_remote_calls=None

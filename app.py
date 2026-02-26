@@ -302,10 +302,12 @@ def webhook():
             
             if message_type == 'text':
                 user_text = message.get('text', '')
-                print(f"User Text [{user_id[:8]} enqueueing]: {user_text}", file=sys.stderr)
+                message_id = message.get('id')
+                print(f"User Text [{user_id[:8]} enqueueing]: {user_text} ID: {message_id}", file=sys.stderr)
                 enqueue_message(user_id, {
                     'type': 'text',
                     'text': user_text,
+                    'message_id': message_id,
                     'reply_token': reply_token
                 })
                 process_queue_for_user(user_id, process_batched_messages)

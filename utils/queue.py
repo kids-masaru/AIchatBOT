@@ -21,6 +21,10 @@ _queue_lock = threading.Lock()
 _user_workers = {}
 _worker_lock = threading.Lock()
 
+# Deduplication: track message IDs for the last few minutes
+_processed_messages = set()
+_processed_lock = threading.Lock()
+
 def _ensure_data_dir():
     DATA_DIR.mkdir(exist_ok=True)
 
@@ -48,6 +52,18 @@ def enqueue_message(user_id, task_data):
     Add a new message/file task to the user's queue.
     task_data should be a dict containing task details (text, file info, etc.)
     """
+    message_id = task_data.get('message_id')
+    
+    if message_id:
+        with _processed_lock:
+            if message_id in _processed_messages:
+                print(f"[Queue] Skipping duplicate message_id: {message_id}", file=sys.stderr)
+                return False
+            _processed_messages.add(message_id)
+            # Keep the set size manageable (rough cleanup)
+            if len(_processed_messages) > 1000:
+                _processed_messages.clear()
+                
     with _queue_lock:
         queue = _load_queue()
         queue[user_id].append(task_data)
@@ -55,6 +71,7 @@ def enqueue_message(user_id, task_data):
     
     # Start a worker thread for this user if one isn't already running
     _start_worker_if_needed(user_id)
+    return True
 
 def _start_worker_if_needed(user_id):
     with _worker_lock:
