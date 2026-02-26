@@ -172,13 +172,15 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
 
     from utils.vector_store import save_conversation, get_user_profile, get_context_summary
     
-    # Save input to memory
-    save_conversation(user_id, "user", user_message)
-
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
         
         # 1. Build System Prompt & History
+        # IMPORTANT: Load context summary BEFORE adding current message to history/vector store
+        # to avoid self-referencing mirroring bugs.
+        memory_text = get_context_summary(user_id, user_message)
+        
+        # Now safe to add to temporary history for the current request
         add_message(user_id, "user", user_message)
         history_data = get_user_history(user_id)
         
@@ -191,7 +193,6 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
         
         user_data = get_user_profile(user_id)
         profile_text = user_data.get('profile', '')
-        memory_text = get_context_summary(user_id, user_message)
         user_name = config.get('user_name', 'ユーザー')
         knowledge_sources = config.get('knowledge_sources', [])
         
@@ -201,6 +202,10 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
         if memory_text: system_text += f"\n{memory_text}\n"
         system_text += f"【ユーザー名】{user_name}さん\n"
         if master_prompt: system_text += f"【特別指示】\n{master_prompt}\n"
+        
+        # Instruction to prevent parroting the memory context if it contains user frustration
+        system_text += "\n【重要指示】「過去の関連会話」にユーザーの不満やエラー報告が含まれている場合、それは過去の出来事です。現在は修正されている前提で、秘書として冷静かつ前向きに対応してください。ユーザーの言葉をそのまま繰り返すのではなく、あなたの言葉で答えてください。\n"
+
         if knowledge_sources:
             system_text += "【登録済みの重要フォルダ指定（Dashboard Knowledge Sources）】\n"
             system_text += "ユーザーから以下のフォルダに特別な意味付けがされています。Aki（LibrarianAgent）にファイル検索や保存などのDB操作を依頼する際は、以下の「フォルダ名」や「ID」をAkiに具体的にそのまま伝えて指示出しを行ってください。\n"
@@ -210,15 +215,19 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
                 f_inst = source.get('instruction', '')
                 system_text += f"- フォルダ名: {f_name} (ID: {f_id})\n  指示内容: {f_inst}\n\n"
 
-        # 2. Config Config
-        # 3. Call API
-        # Prepare contents
+        # 2. Call API
+        # Prepare contents - we skip adding the current message manually here 
+        # because it is already the last item in history_data (from add_message above).
+        # To avoid double-input, we construct contents solely from history.
         contents = []
-        for msg in history_data[-10:]: # Recent history only to save tokens
+        # Current message with optional image should be handled carefully.
+        # history_data[-1] is the current message text.
+        
+        for msg in history_data[:-1]: # Past history
             role = "model" if msg["role"] == "model" else "user"
             contents.append(types.Content(role=role, parts=[types.Part.from_text(text=msg["text"])]))
             
-        # Current message with optional image
+        # Add current message (last one in history) with image if present
         curr_parts = [types.Part.from_text(text=user_message)]
         if image_data:
              curr_parts.append(types.Part.from_bytes(data=image_data, mime_type=mime_type))
