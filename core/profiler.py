@@ -23,7 +23,7 @@ class ProfilerAgent:
         else:
             self.client = genai.Client(api_key=api_key)
             
-        self.model_name = 'gemini-2.0-flash-exp'
+        self.model_name = 'gemini-2.0-flash'
         
     def run_analysis(self, user_id: str, days_back: int = 1) -> Dict:
         """Analyze recent conversations and update profile"""

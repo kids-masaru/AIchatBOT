@@ -29,7 +29,7 @@ class GeminiEmbedder:
         client = genai.Client(api_key=GEMINI_API_KEY)
         # Use 'text-embedding-004' (standard Gemini embedding)
         result = client.models.embed_content(
-            model="text-embedding-004",
+            model="models/text-embedding-004",
             contents=text
         )
         return result.embeddings[0].values
