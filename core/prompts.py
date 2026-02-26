@@ -141,9 +141,9 @@ TOOLS = [
         "parameters": {
             "type": "object",
             "properties": {
-                "location": {"type": "string", "description": "場所の名前（例: '日田市', '東京都'）"}
+                "location_name": {"type": "string", "description": "場所の名前（例: '日田市', '東京都'）"}
             },
-            "required": ["location"]
+            "required": ["location_name"]
         }
     }
 ]
