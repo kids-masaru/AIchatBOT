@@ -18,7 +18,7 @@ load_dotenv()
 # Add project root to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from core.agent import get_agent_response, get_gemini_response
+from core.agent import get_gemini_response
 from utils.storage import clear_user_history
 from utils.sheets_config import load_config, save_config
 from tools.google_ops import search_drive
