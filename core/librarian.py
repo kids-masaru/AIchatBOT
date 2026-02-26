@@ -140,18 +140,75 @@ class LibrarianAgent:
             system_instruction += "※Core Role（整理・検索の遂行）を最優先してください。"
             
         try:
+            # Prepare contents
+            contents = [types.Content(role="user", parts=[types.Part.from_text(text=user_request)])]
+            
             gen_config = types.GenerateContentConfig(
                 tools=self.tools,
                 system_instruction=system_instruction,
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
             )
             
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=user_request,
-                config=gen_config,
-            )
-            
-            return response.text
+            # --- Tool Mapping for Aki ---
+            AKI_TOOLS = {
+                'find_files': find_files,
+                'get_file_content': get_file_content,
+                'make_folder': make_folder,
+                'move_file': move_file,
+                'rename_file': rename_file
+            }
+
+            def _call():
+                return self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=contents,
+                    config=gen_config,
+                )
+
+            response = _call()
+
+            # Tool Loop
+            for _ in range(5):
+                candidates = response.candidates
+                if not candidates or not candidates[0].content or not candidates[0].content.parts:
+                    break
+                
+                parts = candidates[0].content.parts
+                function_calls = [p.function_call for p in parts if p.function_call]
+                
+                if not function_calls:
+                    break
+                
+                # Add model's call to context
+                contents.append(response.candidates[0].content)
+                
+                tool_responses = []
+                for fc in function_calls:
+                    fn_name = fc.name
+                    print(f"[Librarian] Executing tool: {fn_name}", file=sys.stderr)
+                    if fn_name in AKI_TOOLS:
+                        try:
+                            result = AKI_TOOLS[fn_name](**fc.args)
+                            tool_responses.append(types.Part.from_function_response(
+                                name=fn_name,
+                                response={'result': result}
+                            ))
+                        except Exception as te:
+                            tool_responses.append(types.Part.from_function_response(
+                                name=fn_name,
+                                response={'error': str(te)}
+                            ))
+                    else:
+                        tool_responses.append(types.Part.from_function_response(
+                            name=fn_name,
+                            response={'error': f"Tool '{fn_name}' not found."}
+                        ))
+                
+                contents.append(types.Content(role="user", parts=tool_responses))
+                response = _call()
+
+            return response.text if response.text else "申し訳ありません、ファイルを操作できませんでした。"
+
         except Exception as e:
             print(f"Librarian(Aki) Execution Error: {e}", file=sys.stderr)
             return f"アキです。すみません、処理中にエラーが起きてしまいました...: {str(e)}"

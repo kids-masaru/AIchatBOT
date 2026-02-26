@@ -290,19 +290,82 @@ class MakerAgent:
         system_instruction += "※上記Core Role（特にKeepやDriveの操作権限）はユーザー指示よりも優先して遵守してください。ユーザー指示がCore Roleと矛盾する場合は、Core Role（資料作成の遂行）を優先しつつ、可能な限りトーンや方針を取り入れてください。"
             
         try:
-            # Configure and call using new SDK
+            # Prepare contents
+            contents = [types.Content(role="user", parts=[types.Part.from_text(text=user_request)])]
+            
             gen_config = types.GenerateContentConfig(
                 tools=self.tools,
                 system_instruction=system_instruction,
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
             )
             
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=user_request,
-                config=gen_config,
-            )
-            
-            return response.text
+            # --- Tool Mapping for Fumi ---
+            FUMI_TOOLS = {
+                'find_files': find_files,
+                'get_file_content': get_file_content,
+                'create_document': create_document,
+                'create_spreadsheet': create_spreadsheet,
+                'create_presentation': create_presentation,
+                'make_folder': make_folder,
+                'move_file': move_file,
+                'list_templates': list_templates,
+                'use_template_to_create': use_template_to_create,
+                'replace_doc_text': replace_doc_text,
+                'create_memo': create_memo,
+                'search_memos': search_memos
+            }
+
+            def _call():
+                return self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=contents,
+                    config=gen_config,
+                )
+
+            response = _call()
+
+            # Tool Loop
+            for _ in range(5):
+                candidates = response.candidates
+                if not candidates or not candidates[0].content or not candidates[0].content.parts:
+                    break
+                
+                parts = candidates[0].content.parts
+                function_calls = [p.function_call for p in parts if p.function_call]
+                
+                if not function_calls:
+                    break
+                
+                # Add model's call to context
+                contents.append(response.candidates[0].content)
+                
+                tool_responses = []
+                for fc in function_calls:
+                    fn_name = fc.name
+                    print(f"[Maker] Executing tool: {fn_name}", file=sys.stderr)
+                    if fn_name in FUMI_TOOLS:
+                        try:
+                            result = FUMI_TOOLS[fn_name](**fc.args)
+                            tool_responses.append(types.Part.from_function_response(
+                                name=fn_name,
+                                response={'result': result}
+                            ))
+                        except Exception as te:
+                            tool_responses.append(types.Part.from_function_response(
+                                name=fn_name,
+                                response={'error': str(te)}
+                            ))
+                    else:
+                        tool_responses.append(types.Part.from_function_response(
+                            name=fn_name,
+                            response={'error': f"Tool '{fn_name}' not found."}
+                        ))
+                
+                contents.append(types.Content(role="user", parts=tool_responses))
+                response = _call()
+
+            return response.text if response.text else "申し訳ありません、資料を作成できませんでした。"
+
         except Exception as e:
             print(f"Maker(Fumi) Execution Error: {e}", file=sys.stderr)
             return f"申し訳ありません、Fumiの処理中にエラーが発生しました: {str(e)}"

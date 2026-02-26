@@ -110,6 +110,39 @@ TOOLS = [
             },
             "required": ["request"]
         }
+    },
+    {
+        "name": "google_web_search",
+        "description": "Google検索を実行して、最新のニュースや情報、天気、辞書的な意味を調べます。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "検索キーワード"}
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "fetch_url",
+        "description": "指定されたURLのウェブページの内容を読み込みます。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "読み込むURL"}
+            },
+            "required": ["url"]
+        }
+    },
+    {
+        "name": "get_current_weather",
+        "description": "指定された場所の現在の天気情報を取得します。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "場所の名前（例: '日田市', '東京都'）"}
+            },
+            "required": ["location"]
+        }
     }
 ]
 

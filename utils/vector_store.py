@@ -182,4 +182,15 @@ def get_context_summary(user_id: str, query: str) -> str:
         summary += f"- {role}: {m['text']}\n"
     return summary
 
+def search_knowledge_base(query: str, n_results: int = 5) -> List[Dict]:
+    """
+    Search-friendly wrapper for sub-agents. 
+    Uses the global _current_user_id from core.agent if available.
+    """
+    from core.agent import _current_user_id
+    if not _current_user_id:
+        print("Warning: search_knowledge_base called without _current_user_id", file=sys.stderr)
+        return []
+    return search_similar_conversations(_current_user_id, query, top_k=n_results)
+
 from datetime import datetime

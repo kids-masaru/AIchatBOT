@@ -150,18 +150,76 @@ class SchedulerAgent:
             system_instruction += "※Core Role（正確な日程調整）を最優先してください。"
             
         try:
+            # Prepare contents
+            contents = [types.Content(role="user", parts=[types.Part.from_text(text=user_request)])]
+            
             gen_config = types.GenerateContentConfig(
                 tools=self.tools,
                 system_instruction=system_instruction,
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
             )
             
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=user_request,
-                config=gen_config,
-            )
-            
-            return response.text
+            # --- Tool Mapping for Rina ---
+            RINA_TOOLS = {
+                'get_calendar_events': get_calendar_events,
+                'add_calendar_event': add_calendar_event,
+                'search_free_slots': search_free_slots,
+                'get_date_info': get_date_info,
+                'list_tasks': list_tasks,
+                'add_task': add_task
+            }
+
+            def _call():
+                return self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=contents,
+                    config=gen_config,
+                )
+
+            response = _call()
+
+            # Tool Loop
+            for _ in range(5):
+                candidates = response.candidates
+                if not candidates or not candidates[0].content or not candidates[0].content.parts:
+                    break
+                
+                parts = candidates[0].content.parts
+                function_calls = [p.function_call for p in parts if p.function_call]
+                
+                if not function_calls:
+                    break
+                
+                # Add model's call to context
+                contents.append(response.candidates[0].content)
+                
+                tool_responses = []
+                for fc in function_calls:
+                    fn_name = fc.name
+                    print(f"[Scheduler] Executing tool: {fn_name}", file=sys.stderr)
+                    if fn_name in RINA_TOOLS:
+                        try:
+                            result = RINA_TOOLS[fn_name](**fc.args)
+                            tool_responses.append(types.Part.from_function_response(
+                                name=fn_name,
+                                response={'result': result}
+                            ))
+                        except Exception as te:
+                            tool_responses.append(types.Part.from_function_response(
+                                name=fn_name,
+                                response={'error': str(te)}
+                            ))
+                    else:
+                        tool_responses.append(types.Part.from_function_response(
+                            name=fn_name,
+                            response={'error': f"Tool '{fn_name}' not found."}
+                        ))
+                
+                contents.append(types.Content(role="user", parts=tool_responses))
+                response = _call()
+
+            return response.text if response.text else "申し訳ありません、予定を管理できませんでした。"
+
         except Exception as e:
             print(f"Scheduler(Rina) Execution Error: {e}", file=sys.stderr)
             return f"リナです。ごめんなさい、カレンダー操作中にエラーが起きちゃいました...: {str(e)}"

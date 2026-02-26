@@ -80,18 +80,75 @@ class CommunicatorAgent:
             system_instruction += "※Core Role（適切なメッセージ作成）を最優先してください。"
 
         try:
+            # Prepare contents
+            contents = [types.Content(role="user", parts=[types.Part.from_text(text=user_request)])]
+
             gen_config = types.GenerateContentConfig(
                 system_instruction=system_instruction,
-                tools=self.tools,  # Tools must be inside config
+                tools=self.tools,
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
             )
 
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=user_request,
-                config=gen_config,
-            )
+            # --- Tool Mapping for Ren ---
+            REN_TOOLS = {
+                'list_gmail': list_gmail,
+                'get_gmail_body': get_gmail_body,
+                'create_drive_folder': create_drive_folder,
+                'move_drive_file': move_drive_file,
+                'create_draft': create_draft
+            }
 
-            return response.text
+            def _call():
+                return self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=contents,
+                    config=gen_config,
+                )
+
+            response = _call()
+
+            # Tool Loop
+            for _ in range(5):
+                candidates = response.candidates
+                if not candidates or not candidates[0].content or not candidates[0].content.parts:
+                    break
+                
+                parts = candidates[0].content.parts
+                function_calls = [p.function_call for p in parts if p.function_call]
+                
+                if not function_calls:
+                    break
+                
+                # Add model's call to context
+                contents.append(response.candidates[0].content)
+                
+                tool_responses = []
+                for fc in function_calls:
+                    fn_name = fc.name
+                    print(f"[Communicator] Executing tool: {fn_name}", file=sys.stderr)
+                    if fn_name in REN_TOOLS:
+                        try:
+                            result = REN_TOOLS[fn_name](**fc.args)
+                            tool_responses.append(types.Part.from_function_response(
+                                name=fn_name,
+                                response={'result': result}
+                            ))
+                        except Exception as te:
+                            tool_responses.append(types.Part.from_function_response(
+                                name=fn_name,
+                                response={'error': str(te)}
+                            ))
+                    else:
+                        tool_responses.append(types.Part.from_function_response(
+                            name=fn_name,
+                            response={'error': f"Tool '{fn_name}' not found."}
+                        ))
+                
+                contents.append(types.Content(role="user", parts=tool_responses))
+                response = _call()
+
+            return response.text if response.text else "申し訳ありません、メッセージを作成できませんでした。"
+
         except Exception as e:
             print(f"Communicator(Ren) Execution Error: {e}", file=sys.stderr)
             return f"レンです。申し訳ありません、文章作成中にエラーが発生しました: {str(e)}"
