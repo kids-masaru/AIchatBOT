@@ -144,10 +144,26 @@ class ProfilerAgent:
             elif "```" in text:
                  text = text.replace("```", "")
             
-            return json.loads(text)
+            return self._safe_parse_profile(text, current_profile)
         except Exception as e:
             print(f"Profiler Logic Error: {e}", file=sys.stderr)
             # Return current profile instead of crashing, so we don't wipe data
+            return current_profile
+
+    def _safe_parse_profile(self, text, current_profile):
+        """Parse Gemini's JSON response, ensuring it's always a dict"""
+        try:
+            result = json.loads(text)
+            # Gemini may rarely return a list like [{"name": ...}] instead of {"name": ...}
+            if isinstance(result, list):
+                if result and isinstance(result[0], dict):
+                    return result[0]
+                return current_profile
+            if not isinstance(result, dict):
+                return current_profile
+            return result
+        except (json.JSONDecodeError, Exception) as e:
+            print(f"Profiler JSON parse error: {e}", file=sys.stderr)
             return current_profile
 
 # Global Instance

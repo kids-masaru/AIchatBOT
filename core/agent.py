@@ -189,10 +189,21 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
         
         personality = config.get("koto_personality", "明るくて元気なAI秘書")
         master_prompt = config.get("koto_master_prompt", "")
-        now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S (%A)')
+        # Fix: Use JST explicitly (Railway runs in UTC)
+        jst = datetime.timezone(datetime.timedelta(hours=9))
+        now_str = datetime.datetime.now(jst).strftime('%Y-%m-%d %H:%M:%S (%A)')
         
         user_data = get_user_profile(user_id)
+        # Safety: Profiler may rarely save a list instead of dict
+        if not isinstance(user_data, dict):
+            user_data = {}
         profile_text = user_data.get('profile', '')
+        # If profile has no 'profile' key but has 'summary', use that
+        if not profile_text and isinstance(user_data, dict):
+            profile_text = user_data.get('summary', '')
+            if not profile_text:
+                # Use the whole profile dict as text
+                profile_text = json.dumps(user_data, ensure_ascii=False)[:2000] if user_data else ''
         user_name = config.get('user_name', 'ユーザー')
         knowledge_sources = config.get('knowledge_sources', [])
         
@@ -210,18 +221,16 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
             system_text += "【登録済みの重要フォルダ指定（Dashboard Knowledge Sources）】\n"
             system_text += "ユーザーから以下のフォルダに特別な意味付けがされています。Aki（LibrarianAgent）にファイル検索や保存などのDB操作を依頼する際は、以下の「フォルダ名」や「ID」をAkiに具体的にそのまま伝えて指示出しを行ってください。\n"
             for source in knowledge_sources:
+                if not isinstance(source, dict):
+                    continue
                 f_name = source.get('name', 'Unknown')
                 f_id = source.get('id', '')
                 f_inst = source.get('instruction', '')
                 system_text += f"- フォルダ名: {f_name} (ID: {f_id})\n  指示内容: {f_inst}\n\n"
 
         # 2. Call API
-        # Prepare contents - we skip adding the current message manually here 
-        # because it is already the last item in history_data (from add_message above).
-        # To avoid double-input, we construct contents solely from history.
+        # Prepare contents from history
         contents = []
-        # Current message with optional image should be handled carefully.
-        # history_data[-1] is the current message text.
         
         for msg in history_data[:-1]: # Past history
             role = "model" if msg["role"] == "model" else "user"
@@ -243,71 +252,76 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
             )
         ]
         
-        # Manual Dispatch Loop for robust tool calling
-        def _call_model(c):
-            return client.models.generate_content(
-                model="gemini-3-flash-preview",
-                contents=c,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_text,
-                    tools=gemini_tools, 
-                    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
-                )
-            )
+        gen_config = types.GenerateContentConfig(
+            system_instruction=system_text,
+            tools=gemini_tools,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+            temperature=0.2
+        )
 
-        response = _call_model(contents)
-        
-        # Iterative tool handling (Max 5 turns to prevent loops)
-        for _ in range(5):
-            # Check if model wants to call a function
+        # Manual Tool Execution Loop
+        # FunctionDeclaration-based tools require manual dispatch via KOTO_TOOLS dict
+        response = client.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=contents,
+            config=gen_config,
+        )
+
+        for _ in range(10):  # Max 10 tool rounds to prevent infinite loops
+            # Check if the response contains function calls
             candidates = response.candidates
-            if not candidates or not candidates[0].content or not candidates[0].content.parts:
+            if not candidates:
                 break
-                
+            
             parts = candidates[0].content.parts
-            function_calls = [p.function_call for p in parts if p.function_call]
+            function_calls = [p for p in parts if p.function_call]
             
             if not function_calls:
-                break
-                
-            # Add model's thought/call to context
-            contents.append(response.candidates[0].content)
+                break  # No more tool calls, exit loop
             
+            # Execute each function call
             tool_responses = []
-            for fc in function_calls:
-                fn_name = fc.name
-                fn_args = fc.args
+            for fc_part in function_calls:
+                fn_name = fc_part.function_call.name
+                fn_args = dict(fc_part.function_call.args) if fc_part.function_call.args else {}
+                
                 print(f"[Agent] Executing tool: {fn_name} with {fn_args}", file=sys.stderr)
                 
                 if fn_name in KOTO_TOOLS:
                     try:
                         result = KOTO_TOOLS[fn_name](**fn_args)
-                        tool_responses.append(types.Part.from_function_response(
-                            name=fn_name,
-                            response={'result': result}
-                        ))
-                    except Exception as e:
-                        print(f"Tool error ({fn_name}): {e}", file=sys.stderr)
-                        tool_responses.append(types.Part.from_function_response(
-                            name=fn_name,
-                            response={'error': str(e)}
-                        ))
+                    except Exception as tool_err:
+                        result = {"error": f"Tool execution failed: {str(tool_err)}"}
+                        print(f"[Agent] Tool error ({fn_name}): {tool_err}", file=sys.stderr)
                 else:
-                    tool_responses.append(types.Part.from_function_response(
+                    result = {"error": f"Unknown tool: {fn_name}"}
+                
+                # Truncate large tool outputs to prevent token exhaustion
+                result_str = json.dumps(result, ensure_ascii=False, default=str) if not isinstance(result, str) else result
+                if len(result_str) > 15000:
+                    result_str = result_str[:15000] + "...(truncated)"
+                    result = {"truncated_result": result_str}
+                
+                tool_responses.append(
+                    types.Part.from_function_response(
                         name=fn_name,
-                        response={'error': f"Tool '{fn_name}' not found."}
-                    ))
+                        response={"result": result}
+                    )
+                )
             
-            # Add results and call model again
+            # Send tool results back to Gemini
+            contents.append(candidates[0].content)  # AI's function_call turn
             contents.append(types.Content(role="user", parts=tool_responses))
-            response = _call_model(contents)
-
-        # Final Response
+            
+            response = client.models.generate_content(
+                model="gemini-3-flash-preview",
+                contents=contents,
+                config=gen_config,
+            )
+        
+        # Extract final text response
         final_text = ""
-        if response.text:
-            final_text = response.text
-        else:
-            # Fallback for complex responses without direct text attribute
+        if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
             for part in response.candidates[0].content.parts:
                 if part.text:
                     final_text += part.text
@@ -321,4 +335,6 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
 
     except Exception as e:
         print(f"Gemini API Error: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
         return f"エラーが発生しました: {e}"

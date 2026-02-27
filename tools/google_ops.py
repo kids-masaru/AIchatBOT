@@ -356,15 +356,19 @@ def search_drive(query, folder_id=None):
                         c['parent_folder_name'] = f['name']
                         expanded_results.append(c)
             
-            # Update files list with expanded content
-            if expanded_results:
-                files = expanded_results
-                
         except Exception as e:
             print(f"Folder expansion error: {e}", file=sys.stderr)
             # Proceed with original results if expansion fails
 
-        return {"success": True, "files": files, "count": len(files)}
+        # Ensure we do not return massive arrays to the LLM
+        # Returning too many items causes token exhaustion and function calling loops
+        MAX_RESULTS = 5
+        if 'expanded_results' in locals() and expanded_results:
+            files = expanded_results[:MAX_RESULTS]
+        else:
+            files = files[:MAX_RESULTS]
+            
+        return {"success": True, "files": files, "count": len(files), "note": f"Showing top {len(files)} results to save memory."}
     except Exception as e:
         return {"error": f"検索中にエラーが発生しました: {str(e)}"}
 
@@ -641,11 +645,10 @@ def normalize_to_rfc3339(date_str):
         
         # YYYY-MM-DD format (most common from AI)
         if len(date_str) == 10 and date_str.count('-') == 2:
-            # Treat as midnight JST, convert to UTC
-            jst = timezone(timedelta(hours=9))
-            dt = datetime.strptime(date_str, '%Y-%m-%d').replace(hour=0, minute=0, second=0, tzinfo=jst)
-            utc_dt = dt.astimezone(timezone.utc)
-            return utc_dt.strftime('%Y-%m-%dT%H:%M:%S.000Z')
+            # Use UTC noon to avoid date drift across timezones
+            # Google Tasks API only uses the date portion, so time doesn't matter
+            # but using noon ensures the date stays the same in any timezone
+            return f"{date_str}T12:00:00.000Z"
         
         # YYYY-MM-DDTHH:MM:SS without timezone
         if 'T' in date_str and len(date_str) >= 19:
@@ -880,6 +883,11 @@ def read_drive_file(file_id: str):
         else:
             return {"error": f"未対応のファイル形式です: {mime_type}"}
             
+        # TRUNCATE FOR SAFE TOKEN USAGE AND FUNCTION CALLING LOOPS
+        MAX_CHARS = 10000
+        if len(content) > MAX_CHARS:
+            content = content[:MAX_CHARS] + f"\n... (※内容が長すぎるため先頭{MAX_CHARS}文字で省略しました。これ以上の情報が必要な場合は検索条件を絞ってください)"
+
         return {"success": True, "title": name, "content": content}
         
     except Exception as e:
