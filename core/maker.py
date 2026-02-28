@@ -50,6 +50,7 @@ FUMI_CORE_ROLE = """
 - replace_doc_text(file_id, replacements): ドキュメント内のプレースホルダー（{{宛名}}など）を置換
 - create_memo(title, content): Google Keepにメモを作成
 - search_memos(text): Google Keepのメモを検索
+- update_keep_note(note_id, new_content): 既存のGoogle Keepメモの内容を上書き更新(追記する場合は内容を取得後に結合して渡す)
 
 【⛔️ 禁止事項 / STRICT PROHIBITIONS ⛔️】
 1. **過去データの流用禁止**: ユーザーの過去のファイル（自分や他の人が作った契約書や領収書など）をテンプレートとして使用することは**厳禁**です。個人情報流出の原因になります。
@@ -173,6 +174,16 @@ def search_memos(text: str) -> dict:
     from tools.keep_ops import search_notes
     return search_notes(text)
 
+def update_keep_note(note_id: str, new_content: str) -> dict:
+    """Update an existing Google Keep note.
+    
+    Args:
+        note_id: The ID of the note to update (e.g., '1a2b3c...')
+        new_content: The new text content for the note.
+    """
+    from tools.keep_ops import update_keep_note
+    return update_keep_note(note_id, new_content)
+
 def make_folder(folder_name: str) -> dict:
     """Create a new folder in Google Drive.
     
@@ -267,7 +278,8 @@ class MakerAgent:
             use_template_to_create,
             replace_doc_text,
             create_memo,
-            search_memos
+            search_memos,
+            update_keep_note
         ]
         
     def run(self, user_request: str, chat_history: list = None) -> str:
@@ -283,6 +295,11 @@ class MakerAgent:
         # 2. Construct System Prompt
         # Force FUMI_CORE_ROLE to be LAST to prevent config override
         system_instruction = ""
+        import datetime
+        jst = datetime.timezone(datetime.timedelta(hours=9))
+        now_str = datetime.datetime.now(jst).strftime('%Y-%m-%d %H:%M:%S (%A)')
+        system_instruction += f"現在のシステム日時: {now_str}\n\n"
+        
         if user_instruction:
             system_instruction += f"【ユーザーからの追加指示（性格・振る舞い）】\n{user_instruction}\n\n"
         
@@ -296,73 +313,14 @@ class MakerAgent:
             gen_config = types.GenerateContentConfig(
                 tools=self.tools,
                 system_instruction=system_instruction,
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
+                temperature=0.2
             )
-            
-            # --- Tool Mapping for Fumi ---
-            FUMI_TOOLS = {
-                'find_files': find_files,
-                'get_file_content': get_file_content,
-                'create_document': create_document,
-                'create_spreadsheet': create_spreadsheet,
-                'create_presentation': create_presentation,
-                'make_folder': make_folder,
-                'move_file': move_file,
-                'list_templates': list_templates,
-                'use_template_to_create': use_template_to_create,
-                'replace_doc_text': replace_doc_text,
-                'create_memo': create_memo,
-                'search_memos': search_memos
-            }
 
-            def _call():
-                return self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=contents,
-                    config=gen_config,
-                )
-
-            response = _call()
-
-            # Tool Loop
-            for _ in range(5):
-                candidates = response.candidates
-                if not candidates or not candidates[0].content or not candidates[0].content.parts:
-                    break
-                
-                parts = candidates[0].content.parts
-                function_calls = [p.function_call for p in parts if p.function_call]
-                
-                if not function_calls:
-                    break
-                
-                # Add model's call to context
-                contents.append(response.candidates[0].content)
-                
-                tool_responses = []
-                for fc in function_calls:
-                    fn_name = fc.name
-                    print(f"[Maker] Executing tool: {fn_name}", file=sys.stderr)
-                    if fn_name in FUMI_TOOLS:
-                        try:
-                            result = FUMI_TOOLS[fn_name](**fc.args)
-                            tool_responses.append(types.Part.from_function_response(
-                                name=fn_name,
-                                response={'result': result}
-                            ))
-                        except Exception as te:
-                            tool_responses.append(types.Part.from_function_response(
-                                name=fn_name,
-                                response={'error': str(te)}
-                            ))
-                    else:
-                        tool_responses.append(types.Part.from_function_response(
-                            name=fn_name,
-                            response={'error': f"Tool '{fn_name}' not found."}
-                        ))
-                
-                contents.append(types.Content(role="user", parts=tool_responses))
-                response = _call()
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=contents,
+                config=gen_config,
+            )
 
             return response.text if response.text else "申し訳ありません、資料を作成できませんでした。"
 

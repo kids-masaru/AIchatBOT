@@ -100,3 +100,61 @@ def search_notes(query):
         if "403" in str(e):
              return {"error": "Google Keep APIが有効になっていないか、権限がありません。GCPコンソールでKeep APIを有効化してください。"}
         return {"error": f"Keep検索エラー: {str(e)}"}
+
+
+def update_keep_note(note_id: str, new_content: str) -> dict:
+    """
+    Update the content of an existing Google Keep note.
+    
+    Args:
+        note_id: The resource name (ID) of the note to update (e.g., 'notes/xxx')
+                 If just 'xxx' is provided, 'notes/' is prepended automatically.
+        new_content: The new text content for the note.
+    """
+    try:
+        service = get_keep_service()
+        if not service:
+            return {"error": "Google認証に失敗しました。"}
+            
+        # Ensure correct formatting of note resource name
+        if not note_id.startswith('notes/'):
+            note_id = f"notes/{note_id}"
+            
+        # Get existing note to preserve title
+        # Keep API doesn't support partial updates easily, so we usually recreate body
+        existing_note = service.notes().get(name=note_id).execute()
+        
+        # Keep API v1 does not have an 'update' method.
+        # We must create a new note and delete the old one.
+        title = existing_note.get('title', '')
+        
+        # 1. Create new note with same title but new content
+        note_body = {
+            'title': title,
+            'body': {
+                'text': {
+                    'text': new_content
+                }
+            }
+        }
+        updated_note = service.notes().create(body=note_body).execute()
+        
+        # 2. Delete the old note
+        try:
+            service.notes().delete(name=note_id).execute()
+        except Exception as delete_err:
+            print(f"Warning: Could not delete old note {note_id}: {delete_err}", file=sys.stderr)
+        
+        url_id = updated_note.get('name', '').split('/')[-1]
+        url = f"https://keep.google.com/u/0/#NOTE/{url_id}"
+        
+        return {
+            "success": True,
+            "message": f"Keepメモを更新しました。",
+            "note_id": updated_note.get('name'),
+            "url": url
+        }
+        
+    except Exception as e:
+        print(f"Keep update error: {e}", file=sys.stderr)
+        return {"error": f"Keepメモ更新エラー: {str(e)}"}

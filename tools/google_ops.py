@@ -373,6 +373,98 @@ def search_drive(query, folder_id=None):
         return {"error": f"検索中にエラーが発生しました: {str(e)}"}
 
 
+def list_drive_folders(parent_id: str = None) -> dict:
+    """List folders in Google Drive for step-by-step searching.
+    If parent_id is None, lists root folders and Shared Drives.
+    """
+    try:
+        creds = get_google_credentials()
+        if not creds:
+            return {"error": "Google認証に失敗しました。"}
+        
+        drive_service = build('drive', 'v3', credentials=creds)
+        
+        # Base query for folders
+        q_str = "mimeType = 'application/vnd.google-apps.folder' and trashed=false"
+        
+        if parent_id:
+            q_str += f" and '{parent_id}' in parents"
+            # Standard folder search
+            results = drive_service.files().list(
+                q=q_str,
+                pageSize=50,
+                fields="files(id, name, mimeType, webViewLink)",
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True
+            ).execute()
+            folders = results.get('files', [])
+            return {"success": True, "folders": folders, "count": len(folders)}
+        else:
+            # Root search: get root folders and shared drives
+            # 1. Get root folders
+            root_results = drive_service.files().list(
+                q=q_str + " and 'root' in parents",
+                pageSize=30,
+                fields="files(id, name, mimeType, webViewLink)"
+            ).execute()
+            folders = root_results.get('files', [])
+            
+            # 2. Get Shared Drives (as folders for simplicity)
+            drives_result = drive_service.drives().list(pageSize=20).execute()
+            drives = drives_result.get('drives', [])
+            for d in drives:
+                folders.append({
+                    'id': d['id'],
+                    'name': d['name'] + ' (Shared Drive)',
+                    'mimeType': 'application/vnd.google-apps.folder',
+                    'webViewLink': '' # Shared drives don't act exactly like files, but ID is what matters
+                })
+            
+            return {"success": True, "folders": folders, "count": len(folders), "note": "Root folders and Shared Drives"}
+
+    except Exception as e:
+        print(f"List folders error: {e}", file=sys.stderr)
+        return {"error": f"フォルダ一覧の取得中にエラーが発生しました: {str(e)}"}
+
+
+def copy_drive_file(file_id: str, new_name: str, folder_id: str = None) -> dict:
+    """Make a copy of a file in Google Drive.
+    
+    Args:
+        file_id: ID of the file to copy
+        new_name: Name for the copied file
+        folder_id: (Optional) ID of the folder to put the copy in
+    """
+    try:
+        creds = get_google_credentials()
+        if not creds:
+            return {"error": "Google認証に失敗しました。"}
+        
+        drive_service = build('drive', 'v3', credentials=creds)
+        
+        body = {'name': new_name}
+        if folder_id:
+            body['parents'] = [folder_id]
+            
+        # supportsAllDrives allows copying to/from shared drives
+        copied_file = drive_service.files().copy(
+            fileId=file_id,
+            body=body,
+            supportsAllDrives=True,
+            fields="id, name, webViewLink"
+        ).execute()
+        
+        print(f"File copied successfully: {copied_file.get('name')} ({copied_file.get('id')})", file=sys.stderr)
+        return {
+            "success": True, 
+            "file": copied_file, 
+            "message": f"ファイル「{new_name}」をコピー作成しました。"
+        }
+    except Exception as e:
+        print(f"Copy file error: {e}", file=sys.stderr)
+        return {"error": f"ファイルのコピー中にエラーが発生しました: {str(e)}"}
+
+
 def list_gmail(query="is:unread", max_results=5):
     """List Gmail messages matching query"""
     try:
@@ -495,6 +587,52 @@ def create_calendar_event(summary, start_time, end_time=None, location=None):
     except Exception as e:
         print(f"Calendar create error: {e}", file=sys.stderr)
         return {"error": f"予定の作成中にエラーが発生しました: {str(e)}"}
+
+
+def update_calendar_event(event_id, summary=None, start_time=None, end_time=None, location=None):
+    """Update an existing calendar event"""
+    try:
+        creds = get_google_credentials()
+        if not creds:
+            return {"error": "Google認証に失敗しました。"}
+        
+        service = build('calendar', 'v3', credentials=creds)
+        
+        # Get existing event
+        event = service.events().get(calendarId='primary', eventId=event_id).execute()
+        
+        if summary:
+            event['summary'] = summary
+        if location:
+            event['location'] = location
+        if start_time:
+            event['start'] = {'dateTime': start_time, 'timeZone': 'Asia/Tokyo'}
+        if end_time:
+            event['end'] = {'dateTime': end_time, 'timeZone': 'Asia/Tokyo'}
+            
+        updated_event = service.events().update(calendarId='primary', eventId=event_id, body=event).execute()
+        return {"success": True, "event": updated_event, "link": updated_event.get('htmlLink'), "message": "予定を更新しました。"}
+        
+    except Exception as e:
+        print(f"Calendar update error: {e}", file=sys.stderr)
+        return {"error": f"予定の更新中にエラーが発生しました: {str(e)}"}
+
+
+def delete_calendar_event(event_id):
+    """Delete a calendar event"""
+    try:
+        creds = get_google_credentials()
+        if not creds:
+            return {"error": "Google認証に失敗しました。"}
+        
+        service = build('calendar', 'v3', credentials=creds)
+        service.events().delete(calendarId='primary', eventId=event_id).execute()
+        
+        return {"success": True, "message": "予定を削除しました。"}
+        
+    except Exception as e:
+        print(f"Calendar delete error: {e}", file=sys.stderr)
+        return {"error": f"予定の削除中にエラーが発生しました: {str(e)}"}
 
 
 def find_free_slots(start_date=None, end_date=None, duration_minutes=60, work_start=10, work_end=18):
@@ -692,6 +830,35 @@ def add_task(title, due=None):
     except Exception as e:
         print(f"Tasks add error: {e}", file=sys.stderr)
         return {"error": f"ToDo追加中にエラーが発生しました: {str(e)}"}
+
+
+def update_task(task_id, title=None, due=None, status=None):
+    """Update an existing Google Task. Status can be 'needsAction' or 'completed'."""
+    try:
+        creds = get_google_credentials()
+        if not creds:
+            return {"error": "Google認証に失敗しました。"}
+        
+        service = build('tasks', 'v1', credentials=creds)
+        
+        # Get existing task
+        task = service.tasks().get(tasklist='@default', task=task_id).execute()
+        
+        if title:
+            task['title'] = title
+        if status:
+            task['status'] = status
+        if due:
+            normalized_due = normalize_to_rfc3339(due)
+            if normalized_due:
+                task['due'] = normalized_due
+                
+        updated_task = service.tasks().update(tasklist='@default', task=task_id, body=task).execute()
+        return {"success": True, "task": updated_task, "message": f"タスクを更新しました（状態: {updated_task.get('status')}）"}
+        
+    except Exception as e:
+        print(f"Tasks update error: {e}", file=sys.stderr)
+        return {"error": f"タスクの更新中にエラーが発生しました: {str(e)}"}
 
 
 def get_gmail_body(message_id: str):

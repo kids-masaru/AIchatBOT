@@ -117,6 +117,40 @@ def add_task(title: str, due_date: str = None) -> dict:
     from tools.google_ops import add_task
     return add_task(title, due_date)
 
+def update_calendar_event(event_id: str, summary: str = None, start_time: str = None, end_time: str = None, location: str = None) -> dict:
+    """Update an existing calendar event.
+    
+    Args:
+        event_id: The ID of the event to update
+        summary: New event title/summary (optional)
+        start_time: New start time in ISO format (optional)
+        end_time: New end time in ISO format (optional)
+        location: New location (optional)
+    """
+    from tools.google_ops import update_calendar_event
+    return update_calendar_event(event_id, summary, start_time, end_time, location)
+
+def delete_calendar_event(event_id: str) -> dict:
+    """Delete a calendar event.
+    
+    Args:
+        event_id: The ID of the event to delete
+    """
+    from tools.google_ops import delete_calendar_event
+    return delete_calendar_event(event_id)
+
+def update_task(task_id: str, title: str = None, due_date: str = None, status: str = None) -> dict:
+    """Update an existing Google Task.
+    
+    Args:
+        task_id: The ID of the task to update
+        title: New task title (optional)
+        due_date: New due date YYYY-MM-DD (optional)
+        status: New status, 'needsAction' (未完了) or 'completed' (完了) (optional)
+    """
+    from tools.google_ops import update_task
+    return update_task(task_id, title, due_date, status)
+
 
 class SchedulerAgent:
     def __init__(self):
@@ -126,10 +160,13 @@ class SchedulerAgent:
         self.tools = [
             get_calendar_events, 
             add_calendar_event, 
+            update_calendar_event,
+            delete_calendar_event,
             search_free_slots, 
             get_date_info,
             list_tasks,
-            add_task
+            add_task,
+            update_task
         ]
         
     def run(self, user_request: str) -> str:
@@ -143,7 +180,11 @@ class SchedulerAgent:
         user_instruction = config_data.get('rina_instruction', '')
         
         # 2. Construct System Prompt
-        system_instruction = f"{RINA_CORE_ROLE}\n\n"
+        import datetime
+        jst = datetime.timezone(datetime.timedelta(hours=9))
+        now_str = datetime.datetime.now(jst).strftime('%Y-%m-%d %H:%M:%S (%A)')
+        
+        system_instruction = f"{RINA_CORE_ROLE}\n\n現在のシステム日時: {now_str}\n\n"
         
         if user_instruction:
             system_instruction += f"【ユーザーからの追加指示（性格・振る舞い）】\n{user_instruction}\n"
@@ -156,69 +197,16 @@ class SchedulerAgent:
             gen_config = types.GenerateContentConfig(
                 tools=self.tools,
                 system_instruction=system_instruction,
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
+                temperature=0.2
             )
-            
-            # --- Tool Mapping for Rina ---
-            RINA_TOOLS = {
-                'get_calendar_events': get_calendar_events,
-                'add_calendar_event': add_calendar_event,
-                'search_free_slots': search_free_slots,
-                'get_date_info': get_date_info,
-                'list_tasks': list_tasks,
-                'add_task': add_task
-            }
 
-            def _call():
-                return self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=contents,
-                    config=gen_config,
-                )
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=contents,
+                config=gen_config,
+            )
 
-            response = _call()
-
-            # Tool Loop
-            for _ in range(5):
-                candidates = response.candidates
-                if not candidates or not candidates[0].content or not candidates[0].content.parts:
-                    break
-                
-                parts = candidates[0].content.parts
-                function_calls = [p.function_call for p in parts if p.function_call]
-                
-                if not function_calls:
-                    break
-                
-                # Add model's call to context
-                contents.append(response.candidates[0].content)
-                
-                tool_responses = []
-                for fc in function_calls:
-                    fn_name = fc.name
-                    print(f"[Scheduler] Executing tool: {fn_name}", file=sys.stderr)
-                    if fn_name in RINA_TOOLS:
-                        try:
-                            result = RINA_TOOLS[fn_name](**fc.args)
-                            tool_responses.append(types.Part.from_function_response(
-                                name=fn_name,
-                                response={'result': result}
-                            ))
-                        except Exception as te:
-                            tool_responses.append(types.Part.from_function_response(
-                                name=fn_name,
-                                response={'error': str(te)}
-                            ))
-                    else:
-                        tool_responses.append(types.Part.from_function_response(
-                            name=fn_name,
-                            response={'error': f"Tool '{fn_name}' not found."}
-                        ))
-                
-                contents.append(types.Content(role="user", parts=tool_responses))
-                response = _call()
-
-            return response.text if response.text else "申し訳ありません、予定を管理できませんでした。"
+            return response.text if response.text else "申し訳ありません、予定を調整できませんでした。"
 
         except Exception as e:
             print(f"Scheduler(Rina) Execution Error: {e}", file=sys.stderr)

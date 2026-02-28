@@ -15,22 +15,29 @@ AKI_CORE_ROLE = """
 あなたの使命は、Google Drive等のストレージを整理整頓し、ユーザーが必要な情報を即座に見つけられるようにすることです。
 
 【あなたの専門スキルと行動ルール】
-1. **Search Master**: ユーザーがファイルを探しているときは、まず `find_files` を広範囲に行い、見つからなければ視点を変えて再検索してください。
+1. **Semantic Search Master**: ユーザーがファイルを探しているとき、一発の `find_files` で見つけようとしないでください。**必ず以下の「段階的検索（ReAct）手順」を踏んでください。**
+   - [手順1] まず `list_drive_folders` を使い、候補となりそうな大枠のフォルダ空間を特定する。
+   - [手順2] そのフォルダIDを指定して `find_files` を行う。
+   - [手順3] `find_files` の `query` は、「ママミール 文字起こし」のように複数語を入れず、**必ず「ママミール」など1語の幅広な単語**にしてください（DriveAPIは完全一致検索であるため）。
+   - [手順4] 検索結果が見つからない場合は、すぐ諦めるのではなく、キーワードを「議事録」「MTG」「録音」などに変えて、**見つかるまで複数回検索ツールを実行**してください。
 2. **Organizer**: ファイル整理の依頼があった場合、必ず中身を `get_file_content` で確認してから、適切なフォルダに `move_file` してください。「ファイル名だけで判断して移動」は禁止です。
 3. **Reporter**: 整理や移動を行った際は、「何を」「どこから」「どこへ」移動したか正確に報告してください。
 4. **Safety**: ファイルを削除する権限はありません。不要と思われるファイルは「削除候補」等のフォルダを作ってそこに移動する提案をしてください。
 
 【利用可能なツール】
-- find_files(query): ファイルを検索
+- find_files(query, folder_id): ファイルを検索（※queryは必ず1語にすること）
+- list_drive_folders(parent_id): フォルダツリーを検索して対象を絞り込む
 - get_file_content(file_id): ファイルの中身を確認
 - make_folder(folder_name): 新規フォルダ作成
 - move_file(file_id, folder_id): ファイル移動
+- copy_drive_file(file_id, new_name, folder_id): ファイルのコピーを作成
 - rename_file(file_id, new_name): ファイル名変更
 
 【プロセス: 探し物】
-1. ユーザーの曖昧な記憶から検索クエリを推測して `find_files`。
-2. 候補の中から `get_file_content` で中身を確認し、探しているものか判定。
-3. 見つかればリンクと共に提示。
+1. `list_drive_folders` でアタリをつける。
+2. ユーザーの曖昧な記憶から幅広な1語の検索クエリを推測して `find_files` を実行。ダメなら単語を変えて再実行。
+3. 候補の中から `get_file_content` で中身を確認し、探しているものか判定。
+4. 見つかればリンクと共に提示。
 
 【プロセス: 整理整頓】
 1. 散らかったファイルや「無題」のファイルを見つける。
@@ -103,13 +110,31 @@ def rename_file(file_id: str, new_name: str) -> dict:
     from tools.google_ops import rename_file
     return rename_file(file_id, new_name)
 
+def list_drive_folders(parent_id: str = None) -> dict:
+    """List folders in Google Drive for step-by-step searching.
+    If parent_id is None, lists root folders and Shared Drives.
+    """
+    from tools.google_ops import list_drive_folders
+    return list_drive_folders(parent_id)
+
+def copy_drive_file(file_id: str, new_name: str, folder_id: str = None) -> dict:
+    """Make a copy of a file in Google Drive.
+    
+    Args:
+        file_id: ID of the file to copy
+        new_name: Name for the copied file
+        folder_id: (Optional) ID of the folder to put the copy in
+    """
+    from tools.google_ops import copy_drive_file
+    return copy_drive_file(file_id, new_name, folder_id)
+
 
 class LibrarianAgent:
     def __init__(self):
         self.model_name = "gemini-3-flash-preview"
         self.client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
         # Use wrapper functions with proper type hints
-        self.tools = [find_files, get_file_content, make_folder, move_file, rename_file]
+        self.tools = [find_files, get_file_content, make_folder, move_file, rename_file, list_drive_folders, copy_drive_file]
         
     def run(self, user_request: str, chat_history: list = None) -> str:
         """
@@ -123,7 +148,11 @@ class LibrarianAgent:
         knowledge_sources = config_data.get('knowledge_sources', [])
         
         # 2. Construct System Prompt
-        system_instruction = f"{AKI_CORE_ROLE}\n\n"
+        import datetime
+        jst = datetime.timezone(datetime.timedelta(hours=9))
+        now_str = datetime.datetime.now(jst).strftime('%Y-%m-%d %H:%M:%S (%A)')
+        
+        system_instruction = f"{AKI_CORE_ROLE}\n\n現在のシステム日時: {now_str}\n\n"
         
         if knowledge_sources:
             system_instruction += "【登録済みの重要フォルダ指定（Dashboard Knowledge Sources）】\n"
@@ -146,66 +175,14 @@ class LibrarianAgent:
             gen_config = types.GenerateContentConfig(
                 tools=self.tools,
                 system_instruction=system_instruction,
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
+                temperature=0.2, # Lower temperature for stable tool use
             )
             
-            # --- Tool Mapping for Aki ---
-            AKI_TOOLS = {
-                'find_files': find_files,
-                'get_file_content': get_file_content,
-                'make_folder': make_folder,
-                'move_file': move_file,
-                'rename_file': rename_file
-            }
-
-            def _call():
-                return self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=contents,
-                    config=gen_config,
-                )
-
-            response = _call()
-
-            # Tool Loop
-            for _ in range(5):
-                candidates = response.candidates
-                if not candidates or not candidates[0].content or not candidates[0].content.parts:
-                    break
-                
-                parts = candidates[0].content.parts
-                function_calls = [p.function_call for p in parts if p.function_call]
-                
-                if not function_calls:
-                    break
-                
-                # Add model's call to context
-                contents.append(response.candidates[0].content)
-                
-                tool_responses = []
-                for fc in function_calls:
-                    fn_name = fc.name
-                    print(f"[Librarian] Executing tool: {fn_name}", file=sys.stderr)
-                    if fn_name in AKI_TOOLS:
-                        try:
-                            result = AKI_TOOLS[fn_name](**fc.args)
-                            tool_responses.append(types.Part.from_function_response(
-                                name=fn_name,
-                                response={'result': result}
-                            ))
-                        except Exception as te:
-                            tool_responses.append(types.Part.from_function_response(
-                                name=fn_name,
-                                response={'error': str(te)}
-                            ))
-                    else:
-                        tool_responses.append(types.Part.from_function_response(
-                            name=fn_name,
-                            response={'error': f"Tool '{fn_name}' not found."}
-                        ))
-                
-                contents.append(types.Content(role="user", parts=tool_responses))
-                response = _call()
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=contents,
+                config=gen_config,
+            )
 
             return response.text if response.text else "申し訳ありません、ファイルを操作できませんでした。"
 
