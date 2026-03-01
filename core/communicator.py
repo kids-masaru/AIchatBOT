@@ -86,66 +86,14 @@ class CommunicatorAgent:
             gen_config = types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 tools=self.tools,
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
+                temperature=0.2
             )
 
-            # --- Tool Mapping for Ren ---
-            REN_TOOLS = {
-                'list_gmail': list_gmail,
-                'get_gmail_body': get_gmail_body,
-                'create_drive_folder': create_drive_folder,
-                'move_drive_file': move_drive_file,
-                'create_draft': create_draft
-            }
-
-            def _call():
-                return self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=contents,
-                    config=gen_config,
-                )
-
-            response = _call()
-
-            # Tool Loop
-            for _ in range(5):
-                candidates = response.candidates
-                if not candidates or not candidates[0].content or not candidates[0].content.parts:
-                    break
-                
-                parts = candidates[0].content.parts
-                function_calls = [p.function_call for p in parts if p.function_call]
-                
-                if not function_calls:
-                    break
-                
-                # Add model's call to context
-                contents.append(response.candidates[0].content)
-                
-                tool_responses = []
-                for fc in function_calls:
-                    fn_name = fc.name
-                    print(f"[Communicator] Executing tool: {fn_name}", file=sys.stderr)
-                    if fn_name in REN_TOOLS:
-                        try:
-                            result = REN_TOOLS[fn_name](**fc.args)
-                            tool_responses.append(types.Part.from_function_response(
-                                name=fn_name,
-                                response={'result': result}
-                            ))
-                        except Exception as te:
-                            tool_responses.append(types.Part.from_function_response(
-                                name=fn_name,
-                                response={'error': str(te)}
-                            ))
-                    else:
-                        tool_responses.append(types.Part.from_function_response(
-                            name=fn_name,
-                            response={'error': f"Tool '{fn_name}' not found."}
-                        ))
-                
-                contents.append(types.Content(role="user", parts=tool_responses))
-                response = _call()
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=contents,
+                config=gen_config,
+            )
 
             return response.text if response.text else "申し訳ありません、メッセージを作成できませんでした。"
 

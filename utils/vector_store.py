@@ -26,15 +26,15 @@ class GeminiEmbedder:
             return self._simple_embedding(text)
 
     def _get_gemini_embedding(self, text: str) -> List[float]:
-        client = genai.Client(api_key=GEMINI_API_KEY)
-        # Use 'gemini-embedding-001' (widely available)
-        result = client.models.embed_content(
+        import google.generativeai as genai_old
+        genai_old.configure(api_key=GEMINI_API_KEY)
+        result = genai_old.embed_content(
             model="models/gemini-embedding-001",
-            contents=text
+            content=text
         )
-        return result.embeddings[0].values
+        return result['embedding']
 
-    def _simple_embedding(self, text: str, dim: int = 768) -> List[float]:
+    def _simple_embedding(self, text: str, dim: int = 3072) -> List[float]:
         import hashlib
         hash_obj = hashlib.sha256(text.encode())
         hash_digest = hash_obj.digest()
@@ -192,5 +192,19 @@ def search_knowledge_base(query: str, n_results: int = 5) -> List[Dict]:
         print("Warning: search_knowledge_base called without _current_user_id", file=sys.stderr)
         return []
     return search_similar_conversations(_current_user_id, query, top_k=n_results)
+
+def save_knowledge_vector(doc_id: str, text: str, metadata: Dict) -> bool:
+    """Save knowledge text vector."""
+    index = _get_index()
+    if index is None: return False
+    
+    try:
+        embedder = GeminiEmbedder()
+        vector = embedder.embed_text(text)
+        index.upsert(vectors=[(doc_id, vector, metadata)])
+        return True
+    except Exception as e:
+        print(f"Save knowledge error: {e}", file=sys.stderr)
+        return False
 
 from datetime import datetime
