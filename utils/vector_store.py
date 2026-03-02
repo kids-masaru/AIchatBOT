@@ -26,13 +26,17 @@ class GeminiEmbedder:
             return self._simple_embedding(text)
 
     def _get_gemini_embedding(self, text: str) -> List[float]:
-        import google.generativeai as genai_old
-        genai_old.configure(api_key=GEMINI_API_KEY)
-        result = genai_old.embed_content(
-            model="models/gemini-embedding-001",
-            content=text
-        )
-        return result['embedding']
+        try:
+            client = genai.Client(api_key=GEMINI_API_KEY)
+            response = client.models.embed_content(
+                model="models/gemini-embedding-001",
+                contents=text
+            )
+            return response.embeddings[0].values
+        except Exception as e:
+            import sys
+            print(f"Embedding API error: {e}", file=sys.stderr)
+            return self._simple_embedding(text)
 
     def _simple_embedding(self, text: str, dim: int = 3072) -> List[float]:
         import hashlib
