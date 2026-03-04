@@ -83,6 +83,12 @@ def _get_database_properties(database_id):
                 if any(t in name.lower() for t in priority_terms) and not any(t in current.lower() for t in priority_terms):
                     mapping["status"] = name
                     
+        # 4. Checkbox
+        elif type_name == "checkbox":
+            if "checkboxes" not in mapping:
+                mapping["checkboxes"] = []
+            mapping["checkboxes"].append(name)
+                    
     return mapping
 
 
@@ -99,6 +105,7 @@ def list_notion_tasks(database_id, filter_today=False):
     title_prop = prop_map.get("title", "名前")
     date_prop = prop_map.get("date", "日付")
     status_prop = prop_map.get("status", "ステータス")
+    checkbox_props = prop_map.get("checkboxes", [])
 
     # Build filter for today's tasks if requested
     body = {}
@@ -141,6 +148,12 @@ def list_notion_tasks(database_id, filter_today=False):
         if date_prop in properties:
             p = properties[date_prop]
             if p.get("date"): due_date = p["date"].get("start")
+            
+        # Extract Checkboxes
+        checkboxes = {}
+        for cb_prop in checkbox_props:
+            if cb_prop in properties:
+                checkboxes[cb_prop] = properties[cb_prop].get("checkbox", False)
         
         if title:
             tasks.append({
@@ -148,6 +161,7 @@ def list_notion_tasks(database_id, filter_today=False):
                 "title": title,
                 "status": status,
                 "due_date": due_date,
+                "checkboxes": checkboxes,
                 "url": page.get("url", "")
             })
     
@@ -275,4 +289,35 @@ def update_notion_task(page_id, status=None, title=None):
         "success": True,
         "id": result.get("id"),
         "url": result.get("url")
+    }
+
+def toggle_notion_checkbox(page_id, property_name, checked):
+    """
+    Toggle a Notion checkbox property on or off.
+    """
+    if not page_id: return {"error": "page_id is required"}
+    if not property_name: return {"error": "property_name is required"}
+    
+    # We first format the exact body for a checkbox update
+    update_props = {
+        property_name: {
+            "checkbox": bool(checked)
+        }
+    }
+    
+    body = {"properties": update_props}
+    result = _notion_request(f"pages/{page_id}", method="PATCH", data=body)
+    
+    if "error" in result: 
+        return {
+            "error": "Failed to update checkbox. Make sure the property_name matches exactly what is in Notion.",
+            "details": result
+        }
+    
+    return {
+        "success": True,
+        "id": result.get("id"),
+        "url": result.get("url"),
+        "updated_property": property_name,
+        "new_value": checked
     }

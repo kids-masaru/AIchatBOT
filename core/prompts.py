@@ -145,6 +145,77 @@ TOOLS = [
             },
             "required": ["location_name"]
         }
+    },
+    {
+        "name": "get_notion_tasks",
+        "description": "Notionのデータベースからタスク一覧を取得します。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "filter_today_only": {
+                    "type": "boolean",
+                    "description": "今日期限のタスクのみを取得する場合は true"
+                }
+            }
+        }
+    },
+    {
+        "name": "add_notion_task",
+        "description": "Notionのデータベースに新しいタスクを追加します。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "タスクのタイトル"
+                },
+                "due_date": {
+                    "type": "string",
+                    "description": "タスクの期限日 (YYYY-MM-DD形式)、省略可能"
+                }
+            },
+            "required": ["title"]
+        }
+    },
+    {
+        "name": "complete_notion_task",
+        "description": "Notionのデータベースの既存タスクのステータスを更新します。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "page_id": {
+                    "type": "string",
+                    "description": "更新対象のタスク(ページ)のID"
+                },
+                "new_status": {
+                    "type": "string",
+                    "description": "新しいステータス名 (例: 'Completed', 'Done', '完了')"
+                }
+            },
+            "required": ["page_id", "new_status"]
+        }
+    },
+    {
+        "name": "toggle_notion_checkbox",
+        "description": "NotionのチェックボックスプロパティをON/OFFします。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "page_id": {
+                    "type": "string",
+                    "description": "更新対象のタスク(ページ)のID"
+                },
+                "property_name": {
+                    "type": "string",
+                    "description": "チェックボックスのプロパティ名 (例: '完了', 'チェック')"
+                },
+                "checked": {
+                    "type": "boolean",
+                    "description": "チェックをつけるならtrue、外すならfalse"
+                }
+            },
+            "required": ["page_id", "property_name", "checked"]
+        }
     }
 ]
 
