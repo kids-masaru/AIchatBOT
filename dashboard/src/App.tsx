@@ -33,7 +33,7 @@ interface Reminder {
 interface NotionDatabase {
   id: string;
   name: string;
-  description: string;
+  instruction: string;
 }
 
 interface Config {
@@ -612,7 +612,7 @@ function App() {
                           <Database className="w-5 h-5 text-indigo-500" />
                           <div>
                             <h3 className="font-bold text-gray-800 text-sm">{db.name}</h3>
-                            <p className="text-[10px] text-gray-400 font-mono">ID: {db.id.slice(0, 8)}...</p>
+                            <p className="text-[10px] text-gray-400 font-mono">ID: {db.id?.slice(0, 8) || 'N/A'}...</p>
                           </div>
                         </div>
                         <button
@@ -623,14 +623,14 @@ function App() {
                         </button>
                       </div>
                       <input
-                        value={db.description}
+                        value={db.instruction || ''}
                         onChange={(e) => {
                           const updated = [...config.notion_databases];
-                          updated[index] = { ...db, description: e.target.value };
+                          updated[index] = { ...db, instruction: e.target.value };
                           setConfig({ ...config, notion_databases: updated });
                         }}
                         className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm outline-none"
-                        placeholder="説明（例：仕事のタスク管理用）"
+                        placeholder="説明・指示（例：仕事のタスク管理用）"
                       />
                     </motion.div>
                   ))}

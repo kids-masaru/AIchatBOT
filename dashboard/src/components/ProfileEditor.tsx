@@ -117,7 +117,7 @@ export const ProfileEditor: React.FC = () => {
                         <label className="block text-sm font-medium text-blue-300 mb-2">性格・特徴 (Personality)</label>
                         <input
                             type="text"
-                            value={profile?.personality_traits.join(', ') || ''}
+                            value={(profile?.personality_traits || []).join(', ')}
                             onChange={(e) => updateArrayField('personality_traits', e.target.value)}
                             className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-gray-200 focus:ring-2 focus:ring-blue-500"
                             placeholder="カンマ区切り (例: 明るい, 論理的)"
@@ -129,7 +129,7 @@ export const ProfileEditor: React.FC = () => {
                         <label className="block text-sm font-medium text-green-300 mb-2">価値観 (Values)</label>
                         <input
                             type="text"
-                            value={profile?.values.join(', ') || ''}
+                            value={(profile?.values || []).join(', ')}
                             onChange={(e) => updateArrayField('values', e.target.value)}
                             className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-gray-200 focus:ring-2 focus:ring-green-500"
                             placeholder="カンマ区切り (例: 自由, 誠実)"
@@ -141,7 +141,7 @@ export const ProfileEditor: React.FC = () => {
                         <label className="block text-sm font-medium text-yellow-300 mb-2">興味・関心 (Interests)</label>
                         <input
                             type="text"
-                            value={profile?.interests.join(', ') || ''}
+                            value={(profile?.interests || []).join(', ')}
                             onChange={(e) => updateArrayField('interests', e.target.value)}
                             className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-gray-200 focus:ring-2 focus:ring-yellow-500"
                             placeholder="カンマ区切り (例: AI, 日本酒)"
@@ -153,7 +153,7 @@ export const ProfileEditor: React.FC = () => {
                         <label className="block text-sm font-medium text-red-300 mb-2">現在の目標 (Goals)</label>
                         <input
                             type="text"
-                            value={profile?.current_goals.join(', ') || ''}
+                            value={(profile?.current_goals || []).join(', ')}
                             onChange={(e) => updateArrayField('current_goals', e.target.value)}
                             className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-gray-200 focus:ring-2 focus:ring-red-500"
                             placeholder="カンマ区切り"
