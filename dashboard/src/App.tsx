@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Save, Folder, FolderOpen, ChevronRight, Loader2, Bot, Bell, User, Trash2, Database, Plus, ArrowLeft } from 'lucide-react';
 import axios from 'axios';
 import { ProfileEditor } from './components/ProfileEditor';
+import { AgentLogViewer } from './components/AgentLogViewer';
 
 // API Base URL
 // In development: use local backend
@@ -638,6 +639,9 @@ function App() {
               )}
             </div>
           </section>
+
+          {/* Agent Activity Log Viewer */}
+          <AgentLogViewer />
 
           {/* Footer Action */}
           <div className="flex justify-end pt-4 pb-12">

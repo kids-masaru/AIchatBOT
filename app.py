@@ -237,12 +237,20 @@ def process_batched_messages(user_id, tasks):
             
         print(f"Agent Batched Input: {combined_text}", file=sys.stderr)
         
+        # Debug mode callback: sends tool activity to LINE in real-time
+        def debug_callback(uid, msg):
+            try:
+                push_message(uid, f"⚙️ 裏側ログ:\n{msg}")
+            except Exception as e:
+                print(f"Debug push error: {e}", file=sys.stderr)
+        
         # Pass the combined text to Koto
         ai_response = get_gemini_response(
             user_id, 
             combined_text.strip(), 
             image_data=last_image_data, 
-            mime_type=last_image_mime
+            mime_type=last_image_mime,
+            on_tool_call=debug_callback
         )
         
         # Try sending response via the latest available reply token
@@ -532,6 +540,24 @@ def handle_config():
                 return json.dumps({"error": "Failed to save config"}), 500, {'Content-Type': 'application/json'}
         except Exception as e:
             return json.dumps({"error": str(e)}), 400, {'Content-Type': 'application/json'}
+
+@app.route('/api/agent-logs', methods=['GET', 'OPTIONS'])
+def handle_agent_logs():
+    """Get recent agent activity logs for dashboard"""
+    if request.method == 'OPTIONS':
+        response = app.make_default_options_response()
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        return response
+    
+    try:
+        from utils.agent_log import get_logs
+        limit = request.args.get('limit', 20, type=int)
+        logs = get_logs(limit)
+        return json.dumps({"logs": logs}, ensure_ascii=False), 200, {'Content-Type': 'application/json'}
+    except Exception as e:
+        return json.dumps({"error": str(e)}), 500, {'Content-Type': 'application/json'}
 
 @app.route('/api/profile', methods=['GET', 'POST', 'OPTIONS'])
 def handle_profile():
