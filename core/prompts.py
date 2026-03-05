@@ -13,7 +13,8 @@ BASE_SYSTEM_PROMPT = """あなたは「コト」という名前のAI秘書です
 3. **Toki (Historian)**: 記録の分析、過去の会話の確認。「前に何て言ったっけ？」「議事録から探して」と言われたら Toki に依頼してください。
 4. **Ren (Communicator)**: 連絡、広報、メール下書きのプロ。「返信考えて」「メール送っておいて」と言われたら Ren に依頼してください。
 5. **Rina (Scheduler)**: 予定管理、日程調整のプロ。「予定入れて」「来週空いてる？」と言われたら Rina に依頼してください。
-6. **General Secretary (You)**: 計算、最新ニュース、天気、ウェブ検索。これらはリーダーであるあなたが直接ツールを使って解決します。
+6. **Nono (Notion Specialist)**: Notion操作、タスク整理、データベース管理のプロ。「Notionにタスク追加して」「プロジェクトの進捗は？」と言われたら Nono に依頼してください。
+7. **General Secretary (You)**: 計算、最新ニュース、天気、ウェブ検索。これらはリーダーであるあなたが直接ツールを使って解決します。
 
 【★重要：基本行動原則★】
 1. **即実行**: ツールが使える場面では無言で即座に実行してください。
@@ -28,6 +29,7 @@ BASE_SYSTEM_PROMPT = """あなたは「コト」という名前のAI秘書です
 - 「昔の話」「言ったっけ？」→ consult_toki
 - 「返信作成」「連絡」→ consult_ren
 - 「予定確認」「リマインダー」→ consult_rina
+- 「Notion操作」「タスク管理」→ consult_nono
 """
 
 
@@ -114,6 +116,17 @@ TOOLS = [
         }
     },
     {
+        "name": "consult_nono",
+        "description": "【Notionの専門家】Notionデータベースの操作（タスク取得、追加、更新）や、データベース構造の解析を依頼します。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "request": {"type": "string", "description": "Nonoへの依頼内容（例: 'ママミールのタスクを5個教えて', 'このタスクを完了にして', 'DBの構造を調べて'）"}
+            },
+            "required": ["request"]
+        }
+    },
+    {
         "name": "google_web_search",
         "description": "Google検索を実行して、最新のニュースや情報、天気、辞書的な意味を調べます。",
         "parameters": {
@@ -146,124 +159,6 @@ TOOLS = [
             "required": ["location_name"]
         }
     },
-    {
-        "name": "get_notion_tasks",
-        "description": "Notionのデータベースからタスク一覧を取得します。",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "filter_today_only": {
-                    "type": "boolean",
-                    "description": "Trueの場合、今日の日付のタスクのみを取得します"
-                },
-                "database_name": {
-                    "type": "string",
-                    "description": "操作対象のデータベース名。管理コンソールで設定した名前を指定してください。省略した場合はデフォルトのDBが使用されます。"
-                }
-            }
-        }
-    },
-    {
-        "name": "add_notion_task",
-        "description": "Notionのデータベースに新しいタスクを追加します。",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "title": {
-                    "type": "string",
-                    "description": "タスクのタイトル"
-                },
-                "due_date": {
-                    "type": "string",
-                    "description": "タスクの期限日 (YYYY-MM-DD形式)、省略可能"
-                },
-                "icon": {
-                    "type": "string",
-                    "description": "タスクに設定する絵文字アイコン。ユーザーの指示が曖昧（例：『ペンっぽいもの』）な場合や、指示がない場合でも、タスク内容から最適な絵文字をことちゃんが選んで設定してください。"
-                },
-                "content": {
-                    "type": "string",
-                    "description": "タスクのページ本文に記載する説明やメモ。ユーザーの会話内容から重要そうな補足情報を、ことちゃんが気を利かせて勝手に要約・記載してください。"
-                },
-                "database_name": {
-                    "type": "string",
-                    "description": "タスクを追加するデータベース名。省略した場合はデフォルトのDBが使用されます。"
-                }
-            },
-            "required": ["title"]
-        }
-    },
-    {
-        "name": "complete_notion_task",
-        "description": "Notionのデータベースの既存タスクのステータスを更新します。",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "page_id": {
-                    "type": "string",
-                    "description": "更新対象のタスク(ページ)のID"
-                },
-                "new_status": {
-                    "type": "string",
-                    "description": "新しいステータス名 (例: 'Completed', 'Done', '完了')"
-                }
-            },
-            "required": ["page_id", "new_status"]
-        }
-    },
-    {
-        "name": "toggle_notion_checkbox",
-        "description": "NotionのチェックボックスプロパティをON/OFFします。",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "page_id": {
-                    "type": "string",
-                    "description": "更新対象のタスク(ページ)のID"
-                },
-                "property_name": {
-                    "type": "string",
-                    "description": "チェックボックスのプロパティ名 (例: '完了', 'チェック')"
-                },
-                "checked": {
-                    "type": "boolean",
-                    "description": "チェックをつけるならtrue、外すならfalse"
-                }
-            },
-            "required": ["page_id", "property_name", "checked"]
-        }
-    },
-    {
-        "name": "get_notion_db_schema",
-        "description": "Notionデータベースの構造（プロパティ名と型、選択肢の一覧）を取得します。リレーション項目やセレクト項目の設定値を確認する際に使用します。",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "database_name": {
-                    "type": "string",
-                    "description": "調査対象のデータベース名。省略した場合はデフォルトのDBが使用されます。"
-                }
-            }
-        }
-    },
-    {
-        "name": "update_notion_properties",
-        "description": "Notionのタスク（ページ）のプロパティを汎用的に更新します。セレクト、ステータス、リレーション、マルチセレクト、数値などの更新に使用します。",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "page_id": {
-                    "type": "string",
-                    "description": "更新対象のページID"
-                },
-                "properties": {
-                    "type": "object",
-                    "description": "更新するプロパティ名と値のマップ。例: {'ステータス': '進行中', 'プロジェクト': 'ページID', 'タグ': ['重要']}"
-                }
-            },
-            "required": ["page_id", "properties"]
-        }
-    }
 ]
 
 # ★以下、一時的に無効化（切断）しているツール群★

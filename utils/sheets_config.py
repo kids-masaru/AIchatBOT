@@ -60,6 +60,7 @@ DEFAULT_CONFIG = {
 
     # --- 7. REN (Comms Expert - The Communicator) ---
     "ren_instruction": "メールやメッセージのドラフト作成、返信推奨を行う専門家「レン」としての指示。",
+    "nono_instruction": "あなたは「のの (Nono)」です。Notionの操作を担当します。タスクの作成、更新、検索、データベース構造の解析をスマートに行ってください。",
 
     # --- Resources ---
     "knowledge_sources": [],
@@ -86,7 +87,10 @@ DEFAULT_CONFIG = {
     ]
 }
 
-_config_sheet_id = None  # Cache
+_config_sheet_id = None  # Cache for sheet ID
+_config_cache = None     # Cache for config data
+_config_cache_time = 0   # Last load time
+CACHE_TTL = 300          # Cache for 5 minutes
 
 def get_or_create_config_sheet():
     """Get or create the KOTO_CONFIG spreadsheet in the shared folder"""
@@ -157,7 +161,14 @@ def get_or_create_config_sheet():
         return None
 
 def load_config():
-    """Load configuration from Google Sheets"""
+    """Load configuration from Google Sheets with memory caching"""
+    global _config_cache, _config_cache_time
+    import time
+    
+    now = time.time()
+    if _config_cache and (now - _config_cache_time < CACHE_TTL):
+        return _config_cache
+
     try:
         sheet_id = get_or_create_config_sheet()
         if not sheet_id:
@@ -180,8 +191,12 @@ def load_config():
             config_json = values[0][0]
             config = json.loads(config_json)
             # Merge with defaults to handle missing keys
-            # Merge with defaults to handle missing keys
             merged = {**DEFAULT_CONFIG, **config}
+            
+            # Update cache
+            _config_cache = merged
+            _config_cache_time = now
+            
             print(f"DEBUG: Config loaded from sheet {_config_sheet_id}. Keys found: {list(config.keys())}", file=sys.stdout)
             return merged
         else:
@@ -216,6 +231,13 @@ def save_config(config):
         ).execute()
         
         print(f"Config saved to sheet {sheet_id}", file=sys.stderr)
+        
+        # Update cache immediately on save
+        global _config_cache, _config_cache_time
+        import time
+        _config_cache = config
+        _config_cache_time = time.time()
+        
         return True
         
     except Exception as e:

@@ -87,6 +87,47 @@ class HistorianAgent:
                 config=gen_config,
             )
 
+            # --- Tool Execution Loop ---
+            for _ in range(5):  # Max 5 rounds for sub-agent
+                if not response.candidates or not response.candidates[0].content.parts:
+                    break
+                
+                parts = response.candidates[0].content.parts
+                function_calls = [p for p in parts if p.function_call]
+                
+                if not function_calls:
+                    break
+                
+                tool_responses = []
+                for fc_part in function_calls:
+                    fn_name = fc_part.function_call.name
+                    fn_args = dict(fc_part.function_call.args) if fc_part.function_call.args else {}
+                    
+                    print(f"[Toki] Executing: {fn_name} with {fn_args}", file=sys.stderr)
+                    
+                    # Toki only has search_kb_tool for now
+                    if fn_name == "search_kb_tool":
+                        result = search_kb_tool(**fn_args)
+                    else:
+                        result = {"error": f"Unknown tool: {fn_name}"}
+                    
+                    tool_responses.append(
+                        types.Part.from_function_response(
+                            name=fn_name,
+                            response={"result": result}
+                        )
+                    )
+                
+                # Send back to Gemini
+                contents.append(response.candidates[0].content)
+                contents.append(types.Content(role="user", parts=tool_responses))
+                
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=contents,
+                    config=gen_config,
+                )
+
             return response.text if response.text else "申し訳ありません、記録を読み取れませんでした。"
 
         except Exception as e:

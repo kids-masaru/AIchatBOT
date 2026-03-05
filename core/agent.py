@@ -60,6 +60,10 @@ def consult_rina(request: str) -> dict:
     from core.scheduler import scheduler
     return {"expert": "Rina", "response": scheduler.run(request)}
 
+def consult_nono(request: str) -> dict:
+    from core.notion_analyst import notion_analyst
+    return {"expert": "Nono", "response": notion_analyst.run(request)}
+
 _current_user_id = None
 def set_reminder(location: str) -> dict:
     if not _current_user_id: return {"error": "User ID missing"}
@@ -160,6 +164,7 @@ KOTO_TOOLS = {
     'consult_toki': consult_toki,
     'consult_ren': consult_ren,
     'consult_rina': consult_rina,
+    'consult_nono': consult_nono,
     'list_available_templates': list_templates,
     'check_new_templates': check_unregistered_templates,
     'find_template': find_template_by_type,
