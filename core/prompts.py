@@ -224,6 +224,32 @@ TOOLS = [
             },
             "required": ["page_id", "property_name", "checked"]
         }
+    },
+    {
+        "name": "get_notion_db_schema",
+        "description": "Notionデータベースの構造（プロパティ名と型、選択肢の一覧）を取得します。リレーション項目やセレクト項目の設定値を確認する際に使用します。",
+        "parameters": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "update_notion_properties",
+        "description": "Notionのタスク（ページ）のプロパティを汎用的に更新します。セレクト、ステータス、リレーション、マルチセレクト、数値などの更新に使用します。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "page_id": {
+                    "type": "string",
+                    "description": "更新対象のページID"
+                },
+                "properties": {
+                    "type": "object",
+                    "description": "更新するプロパティ名と値のマップ。例: {'ステータス': '進行中', 'プロジェクト': 'ページID', 'タグ': ['重要']}"
+                }
+            },
+            "required": ["page_id", "properties"]
+        }
     }
 ]
 

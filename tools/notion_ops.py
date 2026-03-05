@@ -92,6 +92,37 @@ def _get_database_properties(database_id):
     return mapping
 
 
+def get_notion_db_schema(database_id):
+    """
+    Fetch the full schema of a Notion database.
+    Returns property names, types, and options (for select/status).
+    """
+    result = _notion_request(f"databases/{database_id}", method="GET")
+    if "error" in result:
+        return result
+        
+    properties = result.get("properties", {})
+    schema = {}
+    
+    for name, prop in properties.items():
+        type_name = prop.get("type")
+        prop_info = {"type": type_name}
+        
+        # Extract options for select/status/multi_select
+        if type_name in ["select", "status"]:
+            options = prop.get(type_name, {}).get("options", [])
+            prop_info["options"] = [opt.get("name") for opt in options]
+        elif type_name == "multi_select":
+            options = prop.get("multi_select", {}).get("options", [])
+            prop_info["options"] = [opt.get("name") for opt in options]
+        elif type_name == "relation":
+            prop_info["database_id"] = prop.get("relation", {}).get("database_id")
+            
+        schema[name] = prop_info
+        
+    return schema
+
+
 def list_notion_tasks(database_id, filter_today=False):
     """
     List tasks from a Notion database
@@ -348,3 +379,64 @@ def toggle_notion_checkbox(page_id, property_name, checked):
         "updated_property": property_name,
         "new_value": checked
     }
+
+
+def update_notion_task_properties(page_id, properties_values):
+    """
+    Update multiple properties of a Notion page dynamically.
+    properties_values: dict of {property_name: value}
+    Values are automatically formatted based on property type.
+    """
+    if not page_id: return {"error": "page_id is required"}
+    
+    # Get current page to determine property types
+    page_info = _notion_request(f"pages/{page_id}", method="GET")
+    if "error" in page_info: return page_info
+    
+    existing_props = page_info.get("properties", {})
+    update_payload = {}
+    
+    for name, value in properties_values.items():
+        if name not in existing_props:
+            print(f"Property '{name}' not found in page properties.", file=sys.stderr)
+            continue
+            
+        prop_type = existing_props[name].get("type")
+        
+        if prop_type == "title":
+            update_payload[name] = {"title": [{"text": {"content": str(value)}}]}
+        elif prop_type == "rich_text":
+            update_payload[name] = {"rich_text": [{"text": {"content": str(value)}}]}
+        elif prop_type == "number":
+            update_payload[name] = {"number": float(value)}
+        elif prop_type == "select":
+            update_payload[name] = {"select": {"name": str(value)}}
+        elif prop_type == "multi_select":
+            if isinstance(value, list):
+                update_payload[name] = {"multi_select": [{"name": str(v)} for v in value]}
+            else:
+                update_payload[name] = {"multi_select": [{"name": str(value)}]}
+        elif prop_type == "status":
+            update_payload[name] = {"status": {"name": str(value)}}
+        elif prop_type == "date":
+            # Assume value is "YYYY-MM-DD"
+            update_payload[name] = {"date": {"start": str(value)}}
+        elif prop_type == "checkbox":
+            update_payload[name] = {"checkbox": bool(value)}
+        elif prop_type == "relation":
+            if isinstance(value, list):
+                update_payload[name] = {"relation": [{"id": str(v)} for v in value]}
+            else:
+                update_payload[name] = {"relation": [{"id": str(value)}]}
+        elif prop_type == "url":
+            update_payload[name] = {"url": str(value)}
+        elif prop_type == "email":
+            update_payload[name] = {"email": str(value)}
+        elif prop_type == "phone_number":
+            update_payload[name] = {"phone_number": str(value)}
+
+    if not update_payload:
+        return {"error": "No valid properties provided for update."}
+        
+    result = _notion_request(f"pages/{page_id}", method="PATCH", data={"properties": update_payload})
+    return result

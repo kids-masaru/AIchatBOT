@@ -26,7 +26,10 @@ from tools.google_ops import (
     list_calendar_events, create_calendar_event, find_free_slots,
     list_tasks, add_task
 )
-from tools.notion_ops import list_notion_tasks, create_notion_task, update_notion_task, toggle_notion_checkbox
+from tools.notion_ops import (
+    list_notion_tasks, create_notion_task, update_notion_task, 
+    toggle_notion_checkbox, get_notion_db_schema, update_notion_task_properties
+)
 from tools.template_ops import (
     list_templates, check_unregistered_templates, find_template_by_type,
     copy_template, register_template, replace_placeholders
@@ -112,13 +115,17 @@ KOTO_TOOLS = {
     'get_notion_tasks': lambda filter_today_only=False: list_notion_tasks(
         (lambda: (lambda c: c.get("notion_databases", [])[0].get("id", "") if c.get("notion_databases") else "")(__import__("utils.sheets_config", fromlist=["load_config"]).load_config()))(), 
         filter_today_only
-    ), # Inline lambda to get config dynamically as in wrapper
+    ), 
+    'get_notion_db_schema': lambda: get_notion_db_schema(
+        (lambda: (lambda c: c.get("notion_databases", [])[0].get("id", "") if c.get("notion_databases") else "")(__import__("utils.sheets_config", fromlist=["load_config"]).load_config()))(),
+    ),
     'add_notion_task': lambda title, due_date=None, icon=None, content=None: create_notion_task(
         (lambda: (lambda c: c.get("notion_databases", [])[0].get("id", "") if c.get("notion_databases") else "")(__import__("utils.sheets_config", fromlist=["load_config"]).load_config()))(),
         title, due_date, None, icon, content
     ),
     'complete_notion_task': lambda page_id, new_status: update_notion_task(page_id, new_status, None),
     'toggle_notion_checkbox': lambda page_id, property_name, checked: toggle_notion_checkbox(page_id, property_name, checked),
+    'update_notion_properties': lambda page_id, properties: update_notion_task_properties(page_id, properties),
     'set_reminder': set_reminder,
     'consult_fumi': consult_fumi,
     'consult_aki': consult_aki,
