@@ -123,6 +123,29 @@ def get_notion_db_schema(database_id):
     return schema
 
 
+def get_notion_page_title(page_id):
+    """
+    Fetch the title of a specific Notion page/task.
+    """
+    if not page_id:
+        return {"error": "page_id is required"}
+    
+    result = _notion_request(f"pages/{page_id}", method="GET")
+    if "error" in result:
+        return result
+        
+    properties = result.get("properties", {})
+    # Find title property
+    for prop in properties.values():
+        if prop.get("type") == "title":
+            title_parts = prop.get("title", [])
+            if title_parts:
+                return {"title": title_parts[0].get("plain_text", "")}
+            break
+            
+    return {"title": "Untitled"}
+
+
 def list_notion_tasks(database_id, filter_today=False):
     """
     List tasks from a Notion database
@@ -186,6 +209,13 @@ def list_notion_tasks(database_id, filter_today=False):
             if cb_prop in properties:
                 checkboxes[cb_prop] = properties[cb_prop].get("checkbox", False)
         
+        # Extract Relations (New: collect all relation IDs)
+        relations = {}
+        for name, prop in properties.items():
+            if prop.get("type") == "relation":
+                rel_list = prop.get("relation", [])
+                relations[name] = [r.get("id") for r in rel_list]
+        
         if title:
             tasks.append({
                 "id": page.get("id"),
@@ -193,6 +223,7 @@ def list_notion_tasks(database_id, filter_today=False):
                 "status": status,
                 "due_date": due_date,
                 "checkboxes": checkboxes,
+                "relations": relations,  # Added relations
                 "url": page.get("url", "")
             })
     

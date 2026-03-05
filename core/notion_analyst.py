@@ -14,7 +14,8 @@ from tools.notion_ops import (
     create_notion_task, 
     update_notion_task,
     toggle_notion_checkbox,
-    update_notion_task_properties
+    update_notion_task_properties,
+    get_notion_page_title
 )
 
 NONO_CORE_ROLE = """
@@ -42,15 +43,18 @@ class NotionAnalystAgent:
     def _resolve_db_id(self, database_name=None):
         config = load_config()
         dbs = config.get("notion_databases", [])
-        if not dbs: return ""
-        if not database_name: return dbs[0].get("id", "")
+        if not dbs: return None
+        if not database_name: return dbs[0].get("id")
+        
+        name_clean = database_name.strip().lower()
         for db in dbs:
-            if database_name.strip() == db.get("name", "").strip():
-                return db.get("id", "")
+            if name_clean == db.get("name", "").strip().lower():
+                return db.get("id")
         for db in dbs:
-            if database_name in db.get("name", ""):
-                return db.get("id", "")
-        return dbs[0].get("id", "")
+            if name_clean in db.get("name", "").lower():
+                return db.get("id")
+        
+        return None # Strict: don't fallback to random DB if name is provided but not found
 
     def run(self, user_request: str) -> str:
         print(f"NotionAnalyst(Nono): Starting with request: {user_request}", file=sys.stderr)
@@ -123,6 +127,17 @@ class NotionAnalystAgent:
                             },
                             "required": ["page_id", "properties"]
                         }
+                    ),
+                    types.FunctionDeclaration(
+                        name="get_notion_page_title",
+                        description="Get the title/name of a specific Notion page by its ID. Useful for resolving relation IDs to names.",
+                        parameters={
+                            "type": "OBJECT",
+                            "properties": {
+                                "page_id": {"type": "STRING"}
+                            },
+                            "required": ["page_id"]
+                        }
                     )
                 ]
             )
@@ -158,23 +173,27 @@ class NotionAnalystAgent:
                     db_name = args.pop("database_name", None)
                     db_id = self._resolve_db_id(db_name)
                     
-                    print(f"[Nono] Executing {fn_name} (DB: {db_name or 'Default'})", file=sys.stderr)
-                    
-                    try:
-                        if fn_name == "get_notion_tasks":
-                            res = list_notion_tasks(db_id, args.get("filter_today_only", False))
-                        elif fn_name == "get_notion_db_schema":
-                            res = get_notion_db_schema(db_id)
-                        elif fn_name == "add_notion_task":
-                            res = create_notion_task(db_id, args.get("title"), args.get("due_date"), None, args.get("icon"), args.get("content"))
-                        elif fn_name == "complete_notion_task":
-                            res = update_notion_task(args.get("page_id"), args.get("new_status"), None)
-                        elif fn_name == "update_notion_properties":
-                            res = update_notion_task_properties(args.get("page_id"), args.get("properties"))
-                        else:
-                            res = {"error": f"Unknown tool: {fn_name}"}
-                    except Exception as e:
-                        res = {"error": str(e)}
+                    if not db_id and fn_name not in ["complete_notion_task", "update_notion_properties", "get_notion_page_title"]:
+                        res = {"error": f"Database '{db_name}' not found in configuration. Please ask user for the ID or check if it's registered."}
+                    else:
+                        print(f"[Nono] Executing {fn_name} (DB: {db_name or 'Default'})", file=sys.stderr)
+                        try:
+                            if fn_name == "get_notion_tasks":
+                                res = list_notion_tasks(db_id, args.get("filter_today_only", False))
+                            elif fn_name == "get_notion_db_schema":
+                                res = get_notion_db_schema(db_id)
+                            elif fn_name == "add_notion_task":
+                                res = create_notion_task(db_id, args.get("title"), args.get("due_date"), None, args.get("icon"), args.get("content"))
+                            elif fn_name == "complete_notion_task":
+                                res = update_notion_task(args.get("page_id"), args.get("new_status"), None)
+                            elif fn_name == "update_notion_properties":
+                                res = update_notion_task_properties(args.get("page_id"), args.get("properties"))
+                            elif fn_name == "get_notion_page_title":
+                                res = get_notion_page_title(args.get("page_id"))
+                            else:
+                                res = {"error": f"Unknown tool: {fn_name}"}
+                        except Exception as e:
+                            res = {"error": str(e)}
 
                     tool_responses.append(types.Part.from_function_response(name=fn_name, response={"result": res}))
                 
