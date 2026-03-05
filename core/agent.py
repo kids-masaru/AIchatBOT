@@ -113,9 +113,9 @@ KOTO_TOOLS = {
         (lambda: (lambda c: c.get("notion_databases", [])[0].get("id", "") if c.get("notion_databases") else "")(__import__("utils.sheets_config", fromlist=["load_config"]).load_config()))(), 
         filter_today_only
     ), # Inline lambda to get config dynamically as in wrapper
-    'add_notion_task': lambda title, due_date=None: create_notion_task(
+    'add_notion_task': lambda title, due_date=None, icon=None, content=None: create_notion_task(
         (lambda: (lambda c: c.get("notion_databases", [])[0].get("id", "") if c.get("notion_databases") else "")(__import__("utils.sheets_config", fromlist=["load_config"]).load_config()))(),
-        title, due_date, None
+        title, due_date, None, icon, content
     ),
     'complete_notion_task': lambda page_id, new_status: update_notion_task(page_id, new_status, None),
     'toggle_notion_checkbox': lambda page_id, property_name, checked: toggle_notion_checkbox(page_id, property_name, checked),

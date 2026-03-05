@@ -168,7 +168,7 @@ def list_notion_tasks(database_id, filter_today=False):
     return {"tasks": tasks, "count": len(tasks)}
 
 
-def create_notion_task(database_id, title, due_date=None, status=None):
+def create_notion_task(database_id, title, due_date=None, status=None, icon=None, content=None):
     """
     Create a new task in a Notion database
     """
@@ -225,6 +225,33 @@ def create_notion_task(database_id, title, due_date=None, status=None):
         "parent": {"database_id": database_id},
         "properties": properties
     }
+    
+    # Add icon if provided
+    if icon:
+        body["icon"] = {
+            "type": "emoji",
+            "emoji": icon
+        }
+        
+    # Add content/description to the page body if provided
+    if content:
+        body["children"] = [
+            {
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {
+                    "rich_text": [
+                        {
+                            "type": "text",
+                            "text": {
+                                "content": content
+                            }
+                        }
+                    ]
+                }
+            }
+        ]
+
     
     result = _notion_request("pages", method="POST", data=body)
     

@@ -172,6 +172,14 @@ TOOLS = [
                 "due_date": {
                     "type": "string",
                     "description": "タスクの期限日 (YYYY-MM-DD形式)、省略可能"
+                },
+                "icon": {
+                    "type": "string",
+                    "description": "タスクに設定する絵文字アイコン (例: '🍎', '✅')、省略可能"
+                },
+                "content": {
+                    "type": "string",
+                    "description": "タスクのページ本文に記載する説明やメモ等、省略可能"
                 }
             },
             "required": ["title"]
