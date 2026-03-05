@@ -211,19 +211,48 @@ def list_notion_tasks(database_id, filter_today=False):
         
         # Extract Relations (New: collect all relation IDs)
         relations = {}
-        for name, prop in properties.items():
-            if prop.get("type") == "relation":
-                rel_list = prop.get("relation", [])
-                relations[name] = [r.get("id") for r in rel_list]
         
+        # New: Extract all properties comprehensively to avoid missing data due to heuristics
+        simple_props = {}
+        
+        for name, p in properties.items():
+            p_type = p.get("type")
+            p_val = None
+            
+            if p_type == "select":
+                p_val = p["select"].get("name") if p["select"] else None
+            elif p_type == "status":
+                if p["status"]:
+                    # Return both name and group for better context
+                    p_val = {
+                        "name": p["status"].get("name"),
+                        "group": p["status"].get("group") 
+                    }
+            elif p_type == "checkbox":
+                p_val = p.get("checkbox")
+            elif p_type == "number":
+                p_val = p.get("number")
+            elif p_type == "date":
+                p_val = p["date"].get("start") if p["date"] else None
+            elif p_type == "multi_select":
+                p_val = [o.get("name") for o in p["multi_select"]]
+            elif p_type == "relation":
+                rel_list = p.get("relation", [])
+                relations[name] = [r.get("id") for r in rel_list]
+                p_val = relations[name]
+                
+            if p_val is not None:
+                simple_props[name] = {"type": p_type, "value": p_val}
+
         if title:
             tasks.append({
                 "id": page.get("id"),
                 "title": title,
-                "status": status,
-                "due_date": due_date,
-                "checkboxes": checkboxes,
-                "relations": relations,  # Added relations
+                "status": status, # Keep for backward compatibility
+                "due_date": due_date, # Keep for backward compatibility
+                "checkboxes": checkboxes, # Keep for backward compatibility
+                "relations": relations, # Keep for backward compatibility
+                "properties": simple_props, # NEW: Full visibility
                 "url": page.get("url", "")
             })
     

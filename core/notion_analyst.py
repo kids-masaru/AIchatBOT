@@ -33,6 +33,11 @@ NONO_CORE_ROLE = """
 2. 必要に応じて `get_notion_db_schema` で項目名や型を確認します。
 3. ツールの引数を正しく組み立てて実行します。
 4. 実行結果（成功・失敗・取得内容）を分かりやすく報告してください。
+【効率的な検索のためのヒント】
+- リレーション項目でフィルタリングする際は、まず関連DBから対象（例：ママミール）のIDを取得してください。
+- その後、メインDBの全件取得結果から、そのIDをリレーションに持つものをプログラム的に（あるいはあなたの思考で）抽出するのが最も確実です。
+- 全件リストの各タスクには `properties` が含まれており、そこですべての項目（ステータス、セレクト、チェックボックス等）の現在の値が確認できます。
+- `get_notion_page_title` をループ内で大量に叩くのは避け、可能な限りID同士の比較で完結させてください。
 """
 
 class NotionAnalystAgent:
@@ -158,7 +163,7 @@ class NotionAnalystAgent:
             )
 
             # Execution Loop
-            for _ in range(8):
+            for _ in range(20):
                 if not response.candidates or not response.candidates[0].content.parts:
                     break
                 parts = response.candidates[0].content.parts
