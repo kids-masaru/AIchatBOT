@@ -77,7 +77,13 @@ DEFAULT_CONFIG = {
             "enabled": True
         }
     ],
-    "notion_databases": []
+    "notion_databases": [
+        {
+            "name": "Default Task",
+            "id": "",
+            "instruction": "タスク管理用のメインデータベースです。特記事項がなければここを使用してください。"
+        }
+    ]
 }
 
 _config_sheet_id = None  # Cache

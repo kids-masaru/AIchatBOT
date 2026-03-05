@@ -88,6 +88,34 @@ def register_new_template(file_id: str, name: str, template_type: str, descripti
     return register_template(file_id, name, template_type, description, fields_list, usage_hint)
 
 
+def _resolve_notion_db_id(database_name=None):
+    """
+    Helper to resolve a database name to an ID using the config.
+    If database_name is None, returns the first database ID.
+    """
+    from utils.sheets_config import load_config
+    config = load_config()
+    dbs = config.get("notion_databases", [])
+    
+    if not dbs:
+        return ""
+        
+    if not database_name:
+        return dbs[0].get("id", "")
+        
+    # Try exact match
+    for db in dbs:
+        if db.get("name") == database_name:
+            return db.get("id", "")
+            
+    # Try partial match
+    for db in dbs:
+        if database_name in db.get("name", ""):
+            return db.get("id", "")
+            
+    return dbs[0].get("id", "")
+
+
 # Map tool names to functions
 KOTO_TOOLS = {
     'calculate': calculate,
@@ -112,15 +140,15 @@ KOTO_TOOLS = {
     'find_free_slots': find_free_slots,
     'list_tasks': list_tasks,
     'add_task': add_task,
-    'get_notion_tasks': lambda filter_today_only=False: list_notion_tasks(
-        (lambda: (lambda c: c.get("notion_databases", [])[0].get("id", "") if c.get("notion_databases") else "")(__import__("utils.sheets_config", fromlist=["load_config"]).load_config()))(), 
+    'get_notion_tasks': lambda database_name=None, filter_today_only=False: list_notion_tasks(
+        _resolve_notion_db_id(database_name), 
         filter_today_only
     ), 
-    'get_notion_db_schema': lambda: get_notion_db_schema(
-        (lambda: (lambda c: c.get("notion_databases", [])[0].get("id", "") if c.get("notion_databases") else "")(__import__("utils.sheets_config", fromlist=["load_config"]).load_config()))(),
+    'get_notion_db_schema': lambda database_name=None: get_notion_db_schema(
+        _resolve_notion_db_id(database_name),
     ),
-    'add_notion_task': lambda title, due_date=None, icon=None, content=None: create_notion_task(
-        (lambda: (lambda c: c.get("notion_databases", [])[0].get("id", "") if c.get("notion_databases") else "")(__import__("utils.sheets_config", fromlist=["load_config"]).load_config()))(),
+    'add_notion_task': lambda title, database_name=None, due_date=None, icon=None, content=None: create_notion_task(
+        _resolve_notion_db_id(database_name),
         title, due_date, None, icon, content
     ),
     'complete_notion_task': lambda page_id, new_status: update_notion_task(page_id, new_status, None),
@@ -235,6 +263,16 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None):
                 f_id = source.get('id', '')
                 f_inst = source.get('instruction', '')
                 system_text += f"- フォルダ名: {f_name} (ID: {f_id})\n  指示内容: {f_inst}\n\n"
+
+        notion_dbs = config.get('notion_databases', [])
+        if notion_dbs:
+            system_text += "【登録済みのNotionデータベース指定】\n"
+            system_text += "ユーザーから以下のデータベースが管理コンソールに登録されています。操作対象のデータベースが明白な場合は、その「データベース名」を引数に指定してツールを実行してください。特定の指示がある場合はそれに従ってください。\n"
+            for db in notion_dbs:
+                if not isinstance(db, dict): continue
+                db_name = db.get('name', 'Unknown')
+                db_inst = db.get('instruction', '')
+                system_text += f"- データベース名: {db_name}\n  指示内容: {db_inst}\n\n"
 
         # 2. Call API
         # Prepare contents from history

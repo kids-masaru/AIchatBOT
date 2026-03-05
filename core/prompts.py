@@ -154,7 +154,11 @@ TOOLS = [
             "properties": {
                 "filter_today_only": {
                     "type": "boolean",
-                    "description": "今日期限のタスクのみを取得する場合は true"
+                    "description": "Trueの場合、今日の日付のタスクのみを取得します"
+                },
+                "database_name": {
+                    "type": "string",
+                    "description": "操作対象のデータベース名。管理コンソールで設定した名前を指定してください。省略した場合はデフォルトのDBが使用されます。"
                 }
             }
         }
@@ -180,6 +184,10 @@ TOOLS = [
                 "content": {
                     "type": "string",
                     "description": "タスクのページ本文に記載する説明やメモ。ユーザーの会話内容から重要そうな補足情報を、ことちゃんが気を利かせて勝手に要約・記載してください。"
+                },
+                "database_name": {
+                    "type": "string",
+                    "description": "タスクを追加するデータベース名。省略した場合はデフォルトのDBが使用されます。"
                 }
             },
             "required": ["title"]
@@ -230,7 +238,12 @@ TOOLS = [
         "description": "Notionデータベースの構造（プロパティ名と型、選択肢の一覧）を取得します。リレーション項目やセレクト項目の設定値を確認する際に使用します。",
         "parameters": {
             "type": "object",
-            "properties": {}
+            "properties": {
+                "database_name": {
+                    "type": "string",
+                    "description": "調査対象のデータベース名。省略した場合はデフォルトのDBが使用されます。"
+                }
+            }
         }
     },
     {
