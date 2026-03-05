@@ -587,7 +587,7 @@ function App() {
                     const name = prompt("このデータベースの名前を入力してください（例：仕事タスク）：") || "Notion DB";
                     setConfig(prev => ({
                       ...prev,
-                      notion_databases: [...prev.notion_databases, { id, name, description: "" }]
+                      notion_databases: [...prev.notion_databases, { id, name, instruction: "" }]
                     }));
                   }
                 }}
