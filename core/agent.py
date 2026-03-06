@@ -232,6 +232,9 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, 
         
         # Now safe to add to temporary history for the current request
         add_message(user_id, "user", user_message)
+        # Fix RAG: Store user message into Pinecone as well to enable bidirectional memory retrieval
+        save_conversation(user_id, "user", user_message)
+        
         history_data = get_user_history(user_id)
         
         from utils.sheets_config import load_config
