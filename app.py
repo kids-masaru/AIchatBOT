@@ -493,6 +493,25 @@ def cron_job():
     # 2. Run Profiler in background thread (slow, avoid timeout)
     def run_profiler_background():
         try:
+            # ----- Daily Notion Ingestion (3 AM JST) -----
+            import datetime
+            jst = datetime.timezone(datetime.timedelta(hours=9))
+            now = datetime.datetime.now(jst)
+            
+            # Execute exactly once per day at 3 AM
+            if now.hour == 3:
+                try:
+                    from core.notion_ingester import run_daily_notion_ingestion
+                    from utils.user_db import get_active_users
+                    users = get_active_users()
+                    print(f"Cron: Starting Daily Notion Ingestion for {len(users)} users at {now.strftime('%H:%M')} JST", file=sys.stderr)
+                    for user in users:
+                        run_daily_notion_ingestion(user['user_id'])
+                except Exception as e:
+                    import traceback
+                    print(f"Daily Ingestion Error (background): {e}\n{traceback.format_exc()}", file=sys.stderr)
+            # ---------------------------------------------
+            
             run_profiler()
         except Exception as e:
             print(f"Cron Profiler Error (background): {e}", file=sys.stderr)
