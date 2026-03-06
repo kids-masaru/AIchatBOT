@@ -1,0 +1,29 @@
+﻿python : Warning: there
+ are non-text parts in 
+the response: ['functio
+n_call'], returning con
+catenated text result f
+rom text parts. Check t
+he full candidates.cont
+ent.parts accessor to g
+et the full model respo
+nse.
+発生場所 行:1 文字:1
++ python test_tool_loop
+.py > test_out.txt 2>&1
++ ~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo     
+         : NotSpecifi  
+  ed: (Warning: ther   
+ e ...model respons    
+e.:String) [], Rem    o
+teException
+    + FullyQualifiedEr 
+   rorId : NativeComm  
+  andError
+ 
+First Response: None
+Calling: get_weather with {'location': 'Tokyo'}
+Second Response (user role): The weather in Tokyo is currently sunny.
+Second Response (function role): The weather in Tokyo is currently sunny.

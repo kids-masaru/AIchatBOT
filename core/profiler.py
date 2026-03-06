@@ -5,6 +5,7 @@ Analyzes conversation history to update user profiles (psychological/preference 
 import os
 import sys
 import json
+import time
 from datetime import datetime
 from typing import Dict, List, Optional
 from google import genai
@@ -127,12 +128,23 @@ class ProfilerAgent:
         """
         
         try:
-            # Use new SDK method
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt,
-                config={'response_mime_type': 'application/json'}
-            )
+            # Use new SDK method with simple retry logic for transient network/API timeouts
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    response = self.client.models.generate_content(
+                        model=self.model_name,
+                        contents=prompt,
+                        config={'response_mime_type': 'application/json'}
+                    )
+                    break # Success
+                except Exception as inner_e:
+                    if attempt < max_retries - 1:
+                        print(f"Profiler API attempt {attempt+1} failed: {inner_e}. Retrying in 5s...", file=sys.stderr)
+                        time.sleep(5)
+                    else:
+                        raise inner_e # Re-raise to be caught by outer block if all retries fail
+
             text = response.text.strip()
             
             # Clean up markdown code blocks if present
@@ -146,7 +158,7 @@ class ProfilerAgent:
             
             return self._safe_parse_profile(text, current_profile)
         except Exception as e:
-            print(f"Profiler Logic Error: {e}", file=sys.stderr)
+            print(f"Profiler Logic/API Error (Analysis Skipped): {type(e).__name__}: {e}", file=sys.stderr)
             # Return current profile instead of crashing, so we don't wipe data
             return current_profile
 

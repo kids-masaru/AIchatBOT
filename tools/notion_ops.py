@@ -146,116 +146,136 @@ def get_notion_page_title(page_id):
     return {"title": "Untitled"}
 
 
-def list_notion_tasks(database_id, filter_today=False):
+def list_notion_tasks(database_id, filter_today=False, relation_id=None, relation_property=None):
     """
-    List tasks from a Notion database
+    List tasks from a Notion database.
+    Can filter by today's date and/or a specific relation ID (e.g., client).
     """
     if not database_id:
         return {"error": "database_id is required"}
     
-    # Resolve property names dynamically
+    # Resolve property names dynamically for today's filter
     prop_map = _get_database_properties(database_id)
-    # Fallbacks if detection failed (though unexpected for Title)
     title_prop = prop_map.get("title", "名前")
     date_prop = prop_map.get("date", "日付")
     status_prop = prop_map.get("status", "ステータス")
     checkbox_props = prop_map.get("checkboxes", [])
 
-    # Build filter for today's tasks if requested
-    body = {}
+    # Build filter
+    filter_conditions = []
+
     if filter_today and date_prop:
         from datetime import datetime, timezone, timedelta
         jst = timezone(timedelta(hours=9))
         today = datetime.now(jst).strftime("%Y-%m-%d")
-        body["filter"] = {
+        filter_conditions.append({
             "property": date_prop, 
-            "date": {
-                "equals": today
-            }
-        }
+            "date": {"equals": today}
+        })
     
-    # Query the database
-    result = _notion_request(f"databases/{database_id}/query", method="POST", data=body)
-    if "error" in result:
-        return result
-    
-    tasks = []
-    for page in result.get("results", []):
-        properties = page.get("properties", {})
-        
-        # Extract Title
-        title = ""
-        if title_prop in properties:
-            p = properties[title_prop]
-            if p.get("title"):
-                title = p["title"][0].get("plain_text", "")
-        
-        # Extract Status
-        status = ""
-        if status_prop in properties:
-            p = properties[status_prop]
-            if p.get("status"): status = p["status"].get("name")
-            elif p.get("select"): status = p["select"].get("name")
-            
-        # Extract Date
-        due_date = ""
-        if date_prop in properties:
-            p = properties[date_prop]
-            if p.get("date"): due_date = p["date"].get("start")
-            
-        # Extract Checkboxes
-        checkboxes = {}
-        for cb_prop in checkbox_props:
-            if cb_prop in properties:
-                checkboxes[cb_prop] = properties[cb_prop].get("checkbox", False)
-        
-        # Extract Relations (New: collect all relation IDs)
-        relations = {}
-        
-        # New: Extract all properties comprehensively to avoid missing data due to heuristics
-        simple_props = {}
-        
-        for name, p in properties.items():
-            p_type = p.get("type")
-            p_val = None
-            
-            if p_type == "select":
-                p_val = p["select"].get("name") if p["select"] else None
-            elif p_type == "status":
-                if p["status"]:
-                    # Return both name and group for better context
-                    p_val = {
-                        "name": p["status"].get("name"),
-                        "group": p["status"].get("group") 
-                    }
-            elif p_type == "checkbox":
-                p_val = p.get("checkbox")
-            elif p_type == "number":
-                p_val = p.get("number")
-            elif p_type == "date":
-                p_val = p["date"].get("start") if p["date"] else None
-            elif p_type == "multi_select":
-                p_val = [o.get("name") for o in p["multi_select"]]
-            elif p_type == "relation":
-                rel_list = p.get("relation", [])
-                relations[name] = [r.get("id") for r in rel_list]
-                p_val = relations[name]
-                
-            if p_val is not None:
-                simple_props[name] = {"type": p_type, "value": p_val}
+    if relation_id and relation_property:
+        filter_conditions.append({
+            "property": relation_property,
+            "relation": {"contains": relation_id}
+        })
 
-        if title:
-            tasks.append({
-                "id": page.get("id"),
-                "title": title,
-                "status": status, # Keep for backward compatibility
-                "due_date": due_date, # Keep for backward compatibility
-                "checkboxes": checkboxes, # Keep for backward compatibility
-                "relations": relations, # Keep for backward compatibility
-                "properties": simple_props, # NEW: Full visibility
-                "url": page.get("url", "")
-            })
-    
+    tasks = []
+    has_more = True
+    next_cursor = None
+
+    while has_more:
+        body = {"page_size": 100}
+        if next_cursor:
+            body["start_cursor"] = next_cursor
+            
+        if len(filter_conditions) > 1:
+            body["filter"] = {"and": filter_conditions}
+        elif len(filter_conditions) == 1:
+            body["filter"] = filter_conditions[0]
+
+        result = _notion_request(f"databases/{database_id}/query", method="POST", data=body)
+        if "error" in result:
+            return result
+            
+        pages = result.get("results", [])
+        for page in pages:
+            properties = page.get("properties", {})
+            
+            # Extract Title
+            title = ""
+            if title_prop in properties:
+                p = properties[title_prop]
+                if p.get("title"):
+                    title = p["title"][0].get("plain_text", "")
+            
+            # Extract Status
+            status = ""
+            if status_prop in properties:
+                p = properties[status_prop]
+                if p.get("status"): status = p["status"].get("name")
+                elif p.get("select"): status = p["select"].get("name")
+                
+            # Extract Date
+            due_date = ""
+            if date_prop in properties:
+                p = properties[date_prop]
+                if p.get("date"): due_date = p["date"].get("start")
+                
+            # Extract Checkboxes
+            checkboxes = {}
+            for cb_prop in checkbox_props:
+                if cb_prop in properties:
+                    checkboxes[cb_prop] = properties[cb_prop].get("checkbox", False)
+            
+            # Extract Relations
+            relations = {}
+            # New: Extract all properties comprehensively
+            simple_props = {}
+            
+            for name, p in properties.items():
+                p_type = p.get("type")
+                p_val = None
+                
+                if p_type == "select":
+                    p_val = p["select"].get("name") if p["select"] else None
+                elif p_type == "status":
+                    if p["status"]:
+                        p_val = {
+                            "name": p["status"].get("name"),
+                            "group": p["status"].get("group") 
+                        }
+                elif p_type == "checkbox":
+                    p_val = p.get("checkbox")
+                elif p_type == "number":
+                    p_val = p.get("number")
+                elif p_type == "date":
+                    p_val = p["date"].get("start") if p["date"] else None
+                elif p_type == "multi_select":
+                    p_val = [o.get("name") for o in p["multi_select"]]
+                elif p_type == "relation":
+                    rel_list = p.get("relation", [])
+                    relations[name] = [r.get("id") for r in rel_list]
+                    p_val = relations[name]
+                    
+                if p_val is not None:
+                    simple_props[name] = {"type": p_type, "value": p_val}
+
+            if title:
+                tasks.append({
+                    "id": page.get("id"),
+                    "title": title,
+                    "status": status,
+                    "due_date": due_date,
+                    "checkboxes": checkboxes,
+                    "relations": relations,
+                    "properties": simple_props,
+                    "url": page.get("url", "")
+                })
+        
+        has_more = result.get("has_more", False)
+        next_cursor = result.get("next_cursor")
+        if len(tasks) >= 1000: break
+
     return {"tasks": tasks, "count": len(tasks)}
 
 

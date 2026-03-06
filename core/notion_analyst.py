@@ -33,11 +33,11 @@ NONO_CORE_ROLE = """
 2. 必要に応じて `get_notion_db_schema` で項目名や型を確認します。
 3. ツールの引数を正しく組み立てて実行します。
 4. 実行結果（成功・失敗・取得内容）を分かりやすく報告してください。
-【効率的な検索のためのヒント】
-- リレーション項目でフィルタリングする際は、まず関連DBから対象（例：ママミール）のIDを取得してください。
-- その後、メインDBの全件取得結果から、そのIDをリレーションに持つものをプログラム的に（あるいはあなたの思考で）抽出するのが最も確実です。
-- 全件リストの各タスクには `properties` が含まれており、そこですべての項目（ステータス、セレクト、チェックボックス等）の現在の値が確認できます。
-- `get_notion_page_title` をループ内で大量に叩くのは避け、可能な限りID同士の比較で完結させてください。
+【効率的な検索とフィルタリングの重要ルール】
+- **Relation Filter**: リレーション（例：クライアント）で絞り込む際は、まず関連DBから対象のIDを取得し、`get_notion_tasks` の `relation_id` と `relation_property` 引数を使ってください。これにより、大量のデータから正確に抽出できます。
+- **Strict Status Check**: 「未完了タスク」を求められた場合、`properties` 内のステータスを厳格に確認してください。「完了」「Done」「Archive」などの項目は**絶対に含めない**でください。
+- **Checkbox Filter**: 「チェックが入っていないもの」などの条件がある場合も、`properties` 内の値を一つずつ確認してください。
+- **Full Scan**: `get_notion_tasks` は多くのページを返せるようになりました。以前見つからなかったタスクも、リレーションフィルタを正しく使えば見つかるはずです。
 """
 
 class NotionAnalystAgent:
@@ -75,18 +75,20 @@ class NotionAnalystAgent:
                 function_declarations=[
                     types.FunctionDeclaration(
                         name="get_notion_tasks",
-                        description="Get list of tasks from a Notion database.",
+                        description="Get list of tasks from a Notion database. Can fetch all pages (up to 1000) and supports server-side relation filtering.",
                         parameters={
                             "type": "OBJECT",
                             "properties": {
                                 "database_name": {"type": "STRING", "description": "Name of the target DB."},
-                                "filter_today_only": {"type": "BOOLEAN"}
+                                "filter_today_only": {"type": "BOOLEAN"},
+                                "relation_id": {"type": "STRING", "description": "Filter by a specific relation ID (e.g. Client ID)."},
+                                "relation_property": {"type": "STRING", "description": "The name of the relation property to filter by (e.g. 'クライアントDB')."}
                             }
                         }
                     ),
                     types.FunctionDeclaration(
                         name="get_notion_db_schema",
-                        description="Get the property schema (names and types) of a database.",
+                        description="Get the property schema (names and types) of a database. CRITICAL: Use this to check exactly what 'Status' or 'Checkbox' properties exist.",
                         parameters={
                             "type": "OBJECT",
                             "properties": {
@@ -184,7 +186,12 @@ class NotionAnalystAgent:
                         print(f"[Nono] Executing {fn_name} (DB: {db_name or 'Default'})", file=sys.stderr)
                         try:
                             if fn_name == "get_notion_tasks":
-                                res = list_notion_tasks(db_id, args.get("filter_today_only", False))
+                                res = list_notion_tasks(
+                                    db_id, 
+                                    args.get("filter_today_only", False),
+                                    relation_id=args.get("relation_id"),
+                                    relation_property=args.get("relation_property")
+                                )
                             elif fn_name == "get_notion_db_schema":
                                 res = get_notion_db_schema(db_id)
                             elif fn_name == "add_notion_task":
