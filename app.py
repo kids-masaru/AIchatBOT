@@ -479,11 +479,16 @@ def cron_job():
     """Manual trigger for reminders - Profiler runs in background to avoid timeout"""
     import threading
     
-    # 1. Check Reminders (fast, run synchronously)
-    try:
-        check_reminders()
-    except Exception as e:
-        print(f"Cron Reminder Error: {e}", file=sys.stderr)
+    # 1. Run Reminders in background thread (can be slow due to Gemini/Notion/Weather APIs)
+    def run_reminders_background():
+        try:
+            check_reminders()
+        except Exception as e:
+            print(f"Cron Reminder Error (background): {e}", file=sys.stderr)
+            
+    reminder_thread = threading.Thread(target=run_reminders_background, daemon=True)
+    reminder_thread.start()
+    print("Cron: Reminders started in background thread", file=sys.stderr)
         
     # 2. Run Profiler in background thread (slow, avoid timeout)
     def run_profiler_background():
