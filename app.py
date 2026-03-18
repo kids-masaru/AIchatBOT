@@ -553,7 +553,16 @@ def handle_config():
         return response
     
     if request.method == 'GET':
-        return json.dumps(load_config(), ensure_ascii=False), 200, {'Content-Type': 'application/json'}
+        config = load_config()
+        # Add Spreadsheet URL for dashboard link
+        try:
+            from utils.sheets_config import get_or_create_config_sheet
+            sheet_id = get_or_create_config_sheet()
+            if sheet_id:
+                config["spreadsheet_url"] = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit"
+        except:
+            pass
+        return json.dumps(config, ensure_ascii=False), 200, {'Content-Type': 'application/json'}
     
     elif request.method == 'POST':
         try:

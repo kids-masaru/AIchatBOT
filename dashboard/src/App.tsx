@@ -64,6 +64,7 @@ interface Config {
   knowledge_sources: KnowledgeSource[];
   reminders: Reminder[];
   notion_databases: NotionDatabase[];
+  spreadsheet_url?: string;
 }
 
 // --- Components ---
@@ -335,133 +336,28 @@ function App() {
             </div>
           </section>
 
-          {/* Master Prompt Card */}
+          {/* Link to Spreadsheet Card */}
           <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="px-6 py-4 bg-gray-50/50 border-b border-gray-100 flex items-center gap-2">
-              <Bot className="w-4 h-4 text-gray-400" />
-              <h2 className="text-sm font-bold text-gray-600 uppercase tracking-wider">Agent Team Instructions</h2>
+            <div className="px-6 py-4 bg-green-50/50 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Database className="w-4 h-4 text-green-600" />
+                <h2 className="text-sm font-bold text-gray-600 uppercase tracking-wider">Agent Instructions (Spreadsheet)</h2>
+              </div>
+              <a 
+                href={config.spreadsheet_url || '#'} 
+                target="_blank" 
+                rel="noreferrer"
+                className="text-xs font-bold text-white bg-green-600 px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 shadow-sm"
+              >
+                スプレッドシートを開く <ChevronRight className="w-3 h-3" />
+              </a>
             </div>
-            <div className="p-6 space-y-8">
-
-              {/* KOTO */}
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-2 h-2 bg-pink-500 rounded-full"></div>
-                  <label className="text-xs font-bold text-gray-700 uppercase">KOTO (Main Secretary)</label>
-                </div>
-                <textarea
-                  value={config.koto_master_prompt}
-                  onChange={e => setConfig({ ...config, koto_master_prompt: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-transparent focus:bg-white focus:border-indigo-500 rounded-lg text-sm font-medium transition-all outline-none resize-none"
-                  rows={4}
-                  placeholder="KOTOへの特別指示（例：山崎フォルダはここ見て、など）"
-                />
-              </div>
-
-              {/* SHIORI */}
-              <div className="border-t border-gray-100 pt-6">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-                  <label className="text-xs font-bold text-gray-700 uppercase">SHIORI (Profiler)</label>
-                </div>
-                <textarea
-                  value={config.shiori_instruction || ''}
-                  onChange={e => setConfig({ ...config, shiori_instruction: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-transparent focus:bg-white focus:border-indigo-500 rounded-lg text-sm font-medium transition-all outline-none resize-none"
-                  rows={4}
-                  placeholder="栞さんへの指示（プロファイリングの方針）"
-                />
-              </div>
-
-              {/* FUMI */}
-              <div className="border-t border-gray-100 pt-6">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                  <label className="text-xs font-bold text-gray-700 uppercase">FUMI (Creator)</label>
-                </div>
-                <textarea
-                  value={config.fumi_instruction || ''}
-                  onChange={e => setConfig({ ...config, fumi_instruction: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-transparent focus:bg-white focus:border-indigo-500 rounded-lg text-sm font-medium transition-all outline-none resize-none"
-                  rows={4}
-                  placeholder="フミさんへの指示（資料作成のトーンなど）"
-                />
-              </div>
-
-              {/* AKI */}
-              <div className="border-t border-gray-100 pt-6">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                  <label className="text-xs font-bold text-gray-700 uppercase">AKI (Librarian)</label>
-                </div>
-                <textarea
-                  value={config.aki_instruction || ''}
-                  onChange={e => setConfig({ ...config, aki_instruction: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-transparent focus:bg-white focus:border-indigo-500 rounded-lg text-sm font-medium transition-all outline-none resize-none"
-                  rows={4}
-                  placeholder="アキさんへの指示（フォルダ整理・検索の方針）"
-                />
-              </div>
-
-              {/* RINA */}
-              <div className="border-t border-gray-100 pt-6">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                  <label className="text-xs font-bold text-gray-700 uppercase">RINA (Scheduler)</label>
-                </div>
-                <textarea
-                  value={config.rina_instruction || ''}
-                  onChange={e => setConfig({ ...config, rina_instruction: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-transparent focus:bg-white focus:border-indigo-500 rounded-lg text-sm font-medium transition-all outline-none resize-none"
-                  rows={4}
-                  placeholder="リナさんへの指示（スケジューリングのルール）"
-                />
-              </div>
-
-              {/* EXPERTS (TOKI & REN) */}
-              <div className="border-t border-gray-100 pt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
-                    <label className="text-xs font-bold text-gray-700 uppercase">TOKI (Historian)</label>
-                  </div>
-                  <textarea
-                    value={config.toki_instruction || ''}
-                    onChange={e => setConfig({ ...config, toki_instruction: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-transparent focus:bg-white focus:border-indigo-500 rounded-lg text-sm font-medium transition-all outline-none resize-none"
-                    rows={4}
-                    placeholder="トキさんへの指示（過去ログ分析の視点）"
-                  />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="w-2 h-2 bg-teal-500 rounded-full"></div>
-                    <label className="text-xs font-bold text-gray-700 uppercase">REN (Communicator)</label>
-                  </div>
-                  <textarea
-                    value={config.ren_instruction || ''}
-                    onChange={e => setConfig({ ...config, ren_instruction: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-transparent focus:bg-white focus:border-indigo-500 rounded-lg text-sm font-medium transition-all outline-none resize-none"
-                    rows={4}
-                    placeholder="レンさんへの指示（広報・連絡のトーン）"
-                  />
-                </div>
-              </div>
-
-              {/* NONO */}
-              <div className="border-t border-gray-100 pt-6">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-2 h-2 bg-yellow-400 rounded-full"></div>
-                  <label className="text-xs font-bold text-gray-700 uppercase">NONO (Innovator)</label>
-                </div>
-                <textarea
-                  value={config.nono_instruction || ''}
-                  onChange={e => setConfig({ ...config, nono_instruction: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-transparent focus:bg-white focus:border-indigo-500 rounded-lg text-sm font-medium transition-all outline-none resize-none"
-                  rows={4}
-                  placeholder="ののさんへの指示（Notion操作やスキル管理の方針）"
-                />
-              </div>
+            <div className="p-6">
+              <p className="text-sm text-gray-500 leading-relaxed">
+                エージェントの基本指示（マニュアル）は現在、すべてGoogleスプレッドシートで一元管理されています。
+                指示の書き換えや性格の調整は、上記ボタンからスプレッドシートを直接編集してください。
+                <strong>※スプレッドシートの変更は、エージェントが次に起動した際に自動的に反映されます。</strong>
+              </p>
             </div>
           </section>
 
