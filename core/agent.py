@@ -120,6 +120,110 @@ def _resolve_notion_db_id(database_name=None):
     return dbs[0].get("id", "")
 
 
+def load_skill(skill_name: str) -> dict:
+    """
+    Find and load a skill (prompt) from the KOTO_SKILLS folder.
+    """
+    from utils.sheets_config import load_config, save_config
+    from tools.google_ops import search_drive, read_drive_file, create_drive_folder
+    config = load_config()
+    folder_id = config.get("skills_folder_id")
+    
+    if not folder_id:
+        # Try to find existing folder
+        print(f"[Agent] Skills folder ID missing. Searching for 'KOTO_SKILLS'...", file=sys.stderr)
+        res = search_drive("KOTO_SKILLS")
+        folders = [f for f in res.get("files", []) if f.get("mimeType") == "application/vnd.google-apps.folder"]
+        
+        if folders:
+            folder_id = folders[0]["id"]
+        else:
+            # Create if not found
+            print(f"[Agent] Creating 'KOTO_SKILLS' folder...", file=sys.stderr)
+            new_folder = create_drive_folder("KOTO_SKILLS")
+            folder_id = new_folder.get("id")
+            
+        if folder_id:
+            config["skills_folder_id"] = folder_id
+            save_config(config)
+
+    if not folder_id:
+        return {"error": "スキルフォルダの取得に失敗しました。"}
+
+    # Search for the skill file in that folder
+    print(f"[Agent] Searching for skill '{skill_name}' in folder {folder_id}", file=sys.stderr)
+    res = search_drive(skill_name, folder_id=folder_id)
+    files = res.get("files", [])
+    
+    if not files:
+        return {"error": f"スキル「{skill_name}」が見つかりませんでした。KOTO_SKILLSフォルダ内にファイルを作成してください。"}
+    
+    # Read the first match
+    file_id = files[0]["id"]
+    content_res = read_drive_file(file_id)
+    
+    if content_res.get("success"):
+        return {
+            "success": True, 
+            "skill_name": skill_name, 
+            "instructions": content_res.get("content"),
+            "source": files[0]["name"]
+        }
+    else:
+        return {"error": f"スキル「{skill_name}」の読み込みに失敗しました。"}
+
+
+def save_skill(skill_name: str, instructions: str, description: str = "") -> dict:
+    """
+    Save a new skill (prompt) to the KOTO_SKILLS folder.
+    """
+    from utils.sheets_config import load_config, save_config
+    from tools.google_ops import search_drive, create_drive_folder, create_google_doc
+    config = load_config()
+    folder_id = config.get("skills_folder_id")
+    
+    # 1. Ensure folder exists (duplicated from load_skill for safety, should refactor later)
+    if not folder_id:
+        res = search_drive("KOTO_SKILLS")
+        folders = [f for f in res.get("files", []) if f.get("mimeType") == "application/vnd.google-apps.folder"]
+        if folders:
+            folder_id = folders[0]["id"]
+        else:
+            new_folder = create_drive_folder("KOTO_SKILLS")
+            folder_id = new_folder.get("id")
+        if folder_id:
+            config["skills_folder_id"] = folder_id
+            save_config(config)
+
+    if not folder_id:
+        return {"error": "スキルフォルダの取得に失敗しました。"}
+
+    # 2. Check if skill already exists
+    res = search_drive(skill_name, folder_id=folder_id)
+    files = res.get("files", [])
+    
+    # 3. Create or Update? For now, we always create or tell them to update? 
+    # Let's just create a new one with a timestamp if conflict, or overwrite. 
+    # Overwrite is cleaner for "Skills".
+    
+    # Prepend description if present
+    content = f"【説明】\n{description}\n\n【指示内容】\n{instructions}" if description else instructions
+    
+    creation_res = create_google_doc(skill_name, content)
+    if creation_res.get("success"):
+        file_id = creation_res.get("file_id")
+        # Move to skills folder
+        from tools.google_ops import move_drive_file
+        move_drive_file(file_id, folder_id)
+        return {
+            "success": True, 
+            "message": f"スキル「{skill_name}」を保存しました。",
+            "url": creation_res.get("url")
+        }
+    else:
+        return {"error": f"スキル「{skill_name}」の保存に失敗しました。"}
+
+
 # Map tool names to functions
 KOTO_TOOLS = {
     'calculate': calculate,
@@ -170,7 +274,10 @@ KOTO_TOOLS = {
     'find_template': find_template_by_type,
     'use_template': use_template,
     'register_new_template': register_new_template,
-    'doc_replace_text': replace_placeholders
+    'doc_replace_text': replace_placeholders,
+    'update_agent_instruction': lambda agent_name, new_instruction: __import__('utils.sheets_config', fromlist=['update_agent_instruction']).update_agent_instruction(agent_name, new_instruction),
+    'load_skill': load_skill,
+    'save_skill': save_skill
 }
 
 def analyze_document_layout(image_data: bytes, mime_type: str) -> dict:

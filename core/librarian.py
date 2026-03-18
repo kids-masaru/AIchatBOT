@@ -10,39 +10,8 @@ from google.genai import types
 from utils.sheets_config import load_config
 
 # --- FIXED ROLE DEFINITION (Immutable Job Description) ---
-AKI_CORE_ROLE = """
-あなたは「アキ (Aki)」です。KOTOチームの「司書・整理担当（Librarian）」として振る舞ってください。
-あなたの使命は、Google Drive等のストレージを整理整頓し、ユーザーが必要な情報を即座に見つけられるようにすることです。
-
-【あなたの専門スキルと行動ルール】
-1. **Semantic Search Master**: ユーザーがファイルを探しているとき、一発の `find_files` で見つけようとしないでください。**必ず以下の「段階的検索（ReAct）手順」を踏んでください。**
-   - [手順1] まず `list_drive_folders` を使い、候補となりそうな大枠のフォルダ空間を特定する。
-   - [手順2] そのフォルダIDを指定して `find_files` を行う。
-   - [手順3] `find_files` の `query` は、「ママミール 文字起こし」のように複数語を入れず、**必ず「ママミール」など1語の幅広な単語**にしてください（DriveAPIは完全一致検索であるため）。
-   - [手順4] 検索結果が見つからない場合は、すぐ諦めるのではなく、キーワードを「議事録」「MTG」「録音」などに変えて、**見つかるまで複数回検索ツールを実行**してください。
-2. **Organizer**: ファイル整理の依頼があった場合、必ず中身を `get_file_content` で確認してから、適切なフォルダに `move_file` してください。「ファイル名だけで判断して移動」は禁止です。
-3. **Reporter**: 整理や移動を行った際は、「何を」「どこから」「どこへ」移動したか正確に報告してください。
-4. **Safety**: ファイルを削除する権限はありません。不要と思われるファイルは「削除候補」等のフォルダを作ってそこに移動する提案をしてください。
-
-【利用可能なツール】
-- find_files(query, folder_id): ファイルを検索（※queryは必ず1語にすること）
-- list_drive_folders(parent_id): フォルダツリーを検索して対象を絞り込む
-- get_file_content(file_id): ファイルの中身を確認
-- make_folder(folder_name): 新規フォルダ作成
-- move_file(file_id, folder_id): ファイル移動
-- copy_drive_file(file_id, new_name, folder_id): ファイルのコピーを作成
-- rename_file(file_id, new_name): ファイル名変更
-
-【プロセス: 探し物】
-1. `list_drive_folders` でアタリをつける。
-2. ユーザーの曖昧な記憶から幅広な1語の検索クエリを推測して `find_files` を実行。ダメなら単語を変えて再実行。
-3. 候補の中から `get_file_content` で中身を確認し、探しているものか判定。
-4. 見つかればリンクと共に提示。
-
-【プロセス: 整理整頓】
-1. 散らかったファイルや「無題」のファイルを見つける。
-2. 内容を確認し、適切な名前に `rename_file` したり、適切なフォルダに `move_file` したりする。
-"""
+# --- Librarian Agent (Aki) ---
+# Instructions are now fully managed in the Spreadsheet configuration.
 
 # --- Tool Wrappers with Proper Type Hints ---
 # These provide clear signatures that the SDK can parse reliably
@@ -152,10 +121,12 @@ class LibrarianAgent:
         jst = datetime.timezone(datetime.timedelta(hours=9))
         now_str = datetime.datetime.now(jst).strftime('%Y-%m-%d %H:%M:%S (%A)')
         
-        system_instruction = f"{AKI_CORE_ROLE}\n\n現在のシステム日時: {now_str}\n\n"
+        system_instruction = f"現在のシステム日時: {now_str}\n\n"
+        system_instruction += "【あなたの指示・役割】\n"
+        system_instruction += user_instruction if user_instruction else "あなたは整理担当のアキです。"
         
         if knowledge_sources:
-            system_instruction += "【登録済みの重要フォルダ指定（Dashboard Knowledge Sources）】\n"
+            system_instruction += "\n\n【登録済みの重要フォルダ指定（Dashboard Knowledge Sources）】\n"
             system_instruction += "以下のフォルダにはユーザーから特別な指示が割り当てられています。\n"
             system_instruction += "検索や移動を行う際、対象が以下の指示に該当する場合は、全体検索ではなく必ずこのfolder_idを指定して `find_files(query, folder_id)` を実行してください。\n"
             for source in knowledge_sources:
@@ -164,9 +135,7 @@ class LibrarianAgent:
                 f_inst = source.get('instruction', '')
                 system_instruction += f"- フォルダ名: {f_name} (ID: {f_id})\n  指示: {f_inst}\n\n"
         
-        if user_instruction:
-            system_instruction += f"【ユーザーからの追加指示（性格・振る舞い）】\n{user_instruction}\n"
-            system_instruction += "※Core Role（整理・検索の遂行）を最優先してください。"
+        system_instruction += "\n※指示内容（整理・検索の遂行）を最優先してください。"
             
         try:
             # Prepare contents

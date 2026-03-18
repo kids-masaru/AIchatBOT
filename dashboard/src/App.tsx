@@ -31,6 +31,13 @@ interface Reminder {
   enabled: boolean;
 }
 
+interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  webViewLink: string;
+}
+
 interface NotionDatabase {
   id: string;
   name: string;
@@ -52,6 +59,7 @@ interface Config {
   rina_instruction: string;
   toki_instruction: string;
   ren_instruction: string;
+  nono_instruction: string;
 
   knowledge_sources: KnowledgeSource[];
   reminders: Reminder[];
@@ -175,6 +183,8 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showBrowser, setShowBrowser] = useState(false);
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [loadingSkills, setLoadingSkills] = useState(false);
 
   const [config, setConfig] = useState<Config>({
     user_name: '',
@@ -186,6 +196,7 @@ function App() {
     rina_instruction: '',
     toki_instruction: '',
     ren_instruction: '',
+    nono_instruction: '',
     knowledge_sources: [],
     reminders: [],
     notion_databases: []
@@ -193,7 +204,20 @@ function App() {
 
   useEffect(() => {
     fetchConfig();
+    fetchSkills();
   }, []);
+
+  const fetchSkills = async () => {
+    setLoadingSkills(true);
+    try {
+      const res = await axios.get(`${API_BASE}/api/skills`);
+      setSkills(res.data.skills || []);
+    } catch (error) {
+      console.error('Failed to fetch skills', error);
+    } finally {
+      setLoadingSkills(false);
+    }
+  };
 
   const fetchConfig = async () => {
     try {
@@ -423,6 +447,21 @@ function App() {
                   />
                 </div>
               </div>
+
+              {/* NONO */}
+              <div className="border-t border-gray-100 pt-6">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-2 h-2 bg-yellow-400 rounded-full"></div>
+                  <label className="text-xs font-bold text-gray-700 uppercase">NONO (Innovator)</label>
+                </div>
+                <textarea
+                  value={config.nono_instruction || ''}
+                  onChange={e => setConfig({ ...config, nono_instruction: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-50 border border-transparent focus:bg-white focus:border-indigo-500 rounded-lg text-sm font-medium transition-all outline-none resize-none"
+                  rows={4}
+                  placeholder="ののさんへの指示（Notion操作やスキル管理の方針）"
+                />
+              </div>
             </div>
           </section>
 
@@ -635,6 +674,55 @@ function App() {
                       />
                     </motion.div>
                   ))}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Skill Library Card */}
+          <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="px-6 py-4 bg-gray-50/50 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Bot className="w-4 h-4 text-indigo-400" />
+                <h2 className="text-sm font-bold text-gray-600 uppercase tracking-wider">Skill Library</h2>
+              </div>
+              <button 
+                onClick={(e) => {
+                  e.preventDefault();
+                  fetchSkills();
+                }} 
+                className="p-1 hover:bg-gray-100 rounded-full text-gray-400"
+              >
+                <Loader2 className={`w-4 h-4 ${loadingSkills ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+            <div className="p-6">
+              {loadingSkills ? <LoadingSpinner /> : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {skills.length === 0 ? (
+                    <div className="md:col-span-2 text-center py-8 border-2 border-dashed border-gray-100 rounded-xl">
+                      <p className="text-sm text-gray-400">スキルがまだありません</p>
+                      <p className="text-xs text-gray-300 mt-1">LINEで「〜のスキルを覚えて」と送ると追加されます</p>
+                    </div>
+                  ) : (
+                    skills.map(skill => (
+                      <a 
+                        key={skill.id} 
+                        href={skill.webViewLink} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="group p-4 border border-gray-100 rounded-xl hover:border-indigo-200 hover:shadow-sm transition-all bg-white"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <h3 className="font-bold text-gray-800 text-sm group-hover:text-indigo-600 transition-colors uppercase tracking-tight">{skill.name}</h3>
+                          <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-indigo-400 transition-all group-hover:translate-x-0.5" />
+                        </div>
+                        <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">
+                          {skill.description || '自動で読み込んで実行するスキルです'}
+                        </p>
+                      </a>
+                    ))
+                  )}
                 </div>
               )}
             </div>

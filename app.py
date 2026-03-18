@@ -676,6 +676,48 @@ def list_folders():
         return json.dumps({"error": str(e)}), 500, {'Content-Type': 'application/json'}
 
 
+@app.route('/api/skills', methods=['GET', 'OPTIONS'])
+def list_skills():
+    """List skills from Google Drive KOTO_SKILLS folder"""
+    if request.method == 'OPTIONS':
+        response = app.make_default_options_response()
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        return response
+    
+    try:
+        config = load_config()
+        folder_id = config.get("skills_folder_id")
+        
+        if not folder_id:
+             # Try search if ID missing
+             from tools.google_ops import search_drive
+             res = search_drive("KOTO_SKILLS")
+             folders = [f for f in res.get("files", []) if f.get("mimeType") == "application/vnd.google-apps.folder"]
+             if folders:
+                 folder_id = folders[0]["id"]
+             else:
+                 return json.dumps({"skills": [], "message": "No skills folder found"}), 200, {'Content-Type': 'application/json'}
+
+        from utils.auth import get_google_credentials
+        from googleapiclient.discovery import build
+        creds = get_google_credentials()
+        service = build('drive', 'v3', credentials=creds)
+        
+        results = service.files().list(
+            q=f"'{folder_id}' in parents and trashed = false",
+            fields="files(id, name, description, webViewLink)",
+            orderBy="name"
+        ).execute()
+        
+        skills = results.get('files', [])
+        return json.dumps({"skills": skills}), 200, {'Content-Type': 'application/json'}
+        
+    except Exception as e:
+        return json.dumps({"error": str(e)}), 500, {'Content-Type': 'application/json'}
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     print(f"Starting Koto AI Secretary on port {port}...", file=sys.stderr)

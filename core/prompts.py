@@ -13,7 +13,7 @@ BASE_SYSTEM_PROMPT = """あなたは「コト」という名前のAI秘書です
 3. **Toki (Historian)**: 記録の分析、過去の会話の確認。「前に何て言ったっけ？」「議事録から探して」と言われたら Toki に依頼してください。
 4. **Ren (Communicator)**: 連絡、広報、メール下書きのプロ。「返信考えて」「メール送っておいて」と言われたら Ren に依頼してください。
 5. **Rina (Scheduler)**: 予定管理、日程調整のプロ。「予定入れて」「来週空いてる？」と言われたら Rina に依頼してください。
-6. **Nono (Notion Specialist)**: Notion操作、タスク整理、データベース管理のプロ。「Notionにタスク追加して」「プロジェクトの進捗は？」と言われたら Nono に依頼してください。
+6. **Nono (Innovator)**: Notion操作、および**知識・スキルの管理**のプロ。「Notionにタスク追加して」「プロジェクトの進捗は？」のほか、「新しいスキルを保存して」「スキルの一覧を教えて」と言われたら Nono に依頼してください。
 7. **General Secretary (You)**: 計算、最新ニュース、天気、ウェブ検索。これらはリーダーであるあなたが直接ツールを使って解決します。
 
 【★重要：基本行動原則★】
@@ -29,7 +29,7 @@ BASE_SYSTEM_PROMPT = """あなたは「コト」という名前のAI秘書です
 - 「昔の話」「言ったっけ？」→ consult_toki
 - 「返信作成」「連絡」→ consult_ren
 - 「予定確認」「リマインダー」→ consult_rina
-- 「Notion操作」「タスク管理」→ consult_nono
+- 「Notion操作」「スキル管理」→ consult_nono
 """
 
 
@@ -117,11 +117,11 @@ TOOLS = [
     },
     {
         "name": "consult_nono",
-        "description": "【Notionの専門家】Notionデータベースの操作（タスク取得、追加、更新）や、データベース構造の解析を依頼します。",
+        "description": "【Notion & 知識管理の専門家】Notionデータベースの操作や、新しいスキルの保存・管理を依頼します。",
         "parameters": {
             "type": "object",
             "properties": {
-                "request": {"type": "string", "description": "Nonoへの依頼内容（例: 'ママミールのタスクを5個教えて', 'このタスクを完了にして', 'DBの構造を調べて'）"}
+                "request": {"type": "string", "description": "Nonoへの依頼内容（例: 'ママミールのタスクを5個教えて', 'この仕事をスキルとして保存して'）"}
             },
             "required": ["request"]
         }
@@ -157,6 +157,49 @@ TOOLS = [
                 "location_name": {"type": "string", "description": "場所の名前（例: '日田市', '東京都'）"}
             },
             "required": ["location_name"]
+        }
+    },
+    {
+        "name": "update_agent_instruction",
+        "description": "エージェント（自分自身やチームメンバー）の「指示書（プロンプト）」を永久的に書き換えて、性格や仕事のやり方を改善します。改善・修正の要望があった場合に使用してください。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "agent_name": {
+                    "type": "string", 
+                    "description": "対象のエージェント名",
+                    "enum": ["koto", "fumi", "aki", "rina", "toki", "ren", "nono"]
+                },
+                "new_instruction": {
+                    "type": "string", 
+                    "description": "新しい指示情報の全文。既存の指示を上書きするため、必要なルールはすべて含めてください。"
+                }
+            },
+            "required": ["agent_name", "new_instruction"]
+        }
+    },
+    {
+        "name": "load_skill",
+        "description": "Google Driveのスキルフォルダから特定の「スキル（追加の指示書）」を読み込みます。複雑な専門作業を依頼された場合や、特定のスキルを使ってほしいと言われた場合に使用してください。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "skill_name": {"type": "string", "description": "スキルの名前（例: 'marketing', 'code_review'）"}
+            },
+            "required": ["skill_name"]
+        }
+    },
+    {
+        "name": "save_skill",
+        "description": "新しいスキル（追加の指示書）をGoogle Driveに保存します。ユーザーから「〜のスキルを覚えて」「〜のやり方を保存して」と言われた場合に使用してください。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "skill_name": {"type": "string", "description": "スキルの名前（アルファベット推奨, 例: 'marketing_pro', 'it_expert'）"},
+                "instructions": {"type": "string", "description": "スキルとして保存する指示の全文。"},
+                "description": {"type": "string", "description": "スキルの簡単な説明（例: 'マーケティングに関する専門的なアドバイスを行うスキル'）"}
+            },
+            "required": ["skill_name", "instructions"]
         }
     },
 ]
