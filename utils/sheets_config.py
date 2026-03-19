@@ -153,16 +153,19 @@ DEFAULT_CONFIG = {
     "skills_folder_id": ""
 }
 
-_config_sheet_id = None  # Cache for sheet ID
-_config_cache = None     # Cache for config data
-_config_cache_time = 0   # Last load time
+_config_sheet_ids = {}  # Cache: client_name -> sheet_id
+_config_caches = {}     # Cache: sheet_id -> config_data
+_config_cache_times = {} # Cache: sheet_id -> timestamp
 CACHE_TTL = 300          # Cache for 5 minutes
 
-def get_or_create_config_sheet():
-    """Get or create the KOTO_CONFIG spreadsheet in the shared folder"""
-    global _config_sheet_id
-    if _config_sheet_id:
-        return _config_sheet_id
+def get_or_create_config_sheet(spreadsheet_id=None):
+    """Get or create the KOTO_CONFIG spreadsheet. If spreadsheet_id is provided, use it."""
+    if spreadsheet_id:
+        return spreadsheet_id
+    
+    global _config_sheet_ids
+    if "default" in _config_sheet_ids:
+        return _config_sheet_ids["default"]
     
     try:
         creds = get_google_credentials()
@@ -212,13 +215,14 @@ def get_or_create_config_sheet():
             supportsAllDrives=True
         ).execute()
         
-        _config_sheet_id = file.get('id')
-        print(f"Created new config sheet: {_config_sheet_id}", file=sys.stderr)
+        new_id = file.get('id')
+        _config_sheet_ids["default"] = new_id
+        print(f"Created new config sheet: {new_id}", file=sys.stderr)
         
         # Initialize with default config
-        save_config(DEFAULT_CONFIG)
+        save_config(DEFAULT_CONFIG, spreadsheet_id=new_id)
         
-        return _config_sheet_id
+        return new_id
         
     except Exception as e:
         print(f"CRITICAL ERROR in get_or_create_config_sheet: {e}", file=sys.stdout)
@@ -226,14 +230,18 @@ def get_or_create_config_sheet():
         traceback.print_exc()
         return None
 
-def load_config():
+def load_config(spreadsheet_id=None):
     """Load configuration from Google Sheets with memory caching"""
-    global _config_cache, _config_cache_time
+    global _config_caches, _config_cache_times
     import time
     
+    sheet_id = get_or_create_config_sheet(spreadsheet_id)
+    if not sheet_id:
+        return DEFAULT_CONFIG
+
     now = time.time()
-    if _config_cache and (now - _config_cache_time < CACHE_TTL):
-        return _config_cache
+    if sheet_id in _config_caches and (now - _config_cache_times.get(sheet_id, 0) < CACHE_TTL):
+        return _config_caches[sheet_id]
 
     try:
         sheet_id = get_or_create_config_sheet()
@@ -260,10 +268,10 @@ def load_config():
             merged = {**DEFAULT_CONFIG, **config}
             
             # Update cache
-            _config_cache = merged
-            _config_cache_time = now
+            _config_caches[sheet_id] = merged
+            _config_cache_times[sheet_id] = now
             
-            print(f"DEBUG: Config loaded from sheet {_config_sheet_id}. Keys found: {list(config.keys())}", file=sys.stdout)
+            print(f"DEBUG: Config loaded from sheet {sheet_id}. Keys found: {list(config.keys())}", file=sys.stdout)
             return merged
         else:
             print(f"DEBUG: Sheet {_config_sheet_id} was empty or invalid structure. Using defaults.", file=sys.stdout)
@@ -273,10 +281,10 @@ def load_config():
         print(f"CRITICAL ERROR loading config from sheets: {e}", file=sys.stdout)
         return DEFAULT_CONFIG
 
-def save_config(config):
+def save_config(config, spreadsheet_id=None):
     """Save configuration to Google Sheets"""
     try:
-        sheet_id = get_or_create_config_sheet()
+        sheet_id = get_or_create_config_sheet(spreadsheet_id)
         if not sheet_id:
             return False
             
@@ -299,10 +307,10 @@ def save_config(config):
         print(f"Config saved to sheet {sheet_id}", file=sys.stderr)
         
         # Update cache immediately on save
-        global _config_cache, _config_cache_time
+        global _config_caches, _config_cache_times
         import time
-        _config_cache = config
-        _config_cache_time = time.time()
+        _config_caches[sheet_id] = config
+        _config_cache_times[sheet_id] = time.time()
         
         return True
         

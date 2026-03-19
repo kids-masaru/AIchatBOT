@@ -34,35 +34,7 @@ from tools.template_ops import (
     list_templates, check_unregistered_templates, find_template_by_type,
     copy_template, register_template, replace_placeholders
 )
-
-# --- Tool Wrapper Functions (Clean names for Gemini) ---
-# ... (Wrappers are same as before, simplified for brevity in this restoration if possible, 
-# or just mapped directly. Gemini SDK handles functions well. 
-# We need to map the 'name' in TOOLS list to actual functions.)
-
-def consult_fumi(request: str) -> dict:
-    from core.maker import maker
-    return {"expert": "Fumi", "response": maker.run(request)}
-
-def consult_aki(request: str) -> dict:
-    from core.librarian import librarian
-    return {"expert": "Aki", "response": librarian.run(request)}
-
-def consult_toki(request: str) -> dict:
-    from core.historian import historian
-    return {"expert": "Toki", "response": historian.run(request)}
-
-def consult_ren(request: str) -> dict:
-    from core.communicator import communicator
-    return {"expert": "Ren", "response": communicator.run(request)}
-
-def consult_rina(request: str) -> dict:
-    from core.scheduler import scheduler
-    return {"expert": "Rina", "response": scheduler.run(request)}
-
-def consult_nono(request: str) -> dict:
-    from core.notion_analyst import notion_analyst
-    return {"expert": "Nono", "response": notion_analyst.run(request)}
+from tools.knowledge_updater import update_common_knowledge
 
 _current_user_id = None
 def set_reminder(location: str) -> dict:
@@ -92,13 +64,13 @@ def register_new_template(file_id: str, name: str, template_type: str, descripti
     return register_template(file_id, name, template_type, description, fields_list, usage_hint)
 
 
-def _resolve_notion_db_id(database_name=None):
+def _resolve_notion_db_id(client_config=None, database_name=None):
     """
     Helper to resolve a database name to an ID using the config.
-    If database_name is None, returns the first database ID.
     """
     from utils.sheets_config import load_config
-    config = load_config()
+    spreadsheet_id = client_config.get('spreadsheet_id') if client_config else None
+    config = load_config(spreadsheet_id)
     dbs = config.get("notion_databases", [])
     
     if not dbs:
@@ -120,13 +92,14 @@ def _resolve_notion_db_id(database_name=None):
     return dbs[0].get("id", "")
 
 
-def load_skill(skill_name: str) -> dict:
+def load_skill(skill_name: str, client_config=None) -> dict:
     """
     Find and load a skill (prompt) from the KOTO_SKILLS folder.
     """
     from utils.sheets_config import load_config, save_config
     from tools.google_ops import search_drive, read_drive_file, create_drive_folder
-    config = load_config()
+    spreadsheet_id = client_config.get('spreadsheet_id') if client_config else None
+    config = load_config(spreadsheet_id)
     folder_id = config.get("skills_folder_id")
     
     if not folder_id:
@@ -173,13 +146,14 @@ def load_skill(skill_name: str) -> dict:
         return {"error": f"スキル「{skill_name}」の読み込みに失敗しました。"}
 
 
-def save_skill(skill_name: str, instructions: str, description: str = "") -> dict:
+def save_skill(skill_name: str, instructions: str, description: str = "", client_config=None) -> dict:
     """
     Save a new skill (prompt) to the KOTO_SKILLS folder.
     """
     from utils.sheets_config import load_config, save_config
     from tools.google_ops import search_drive, create_drive_folder, create_google_doc
-    config = load_config()
+    spreadsheet_id = client_config.get('spreadsheet_id') if client_config else None
+    config = load_config(spreadsheet_id)
     folder_id = config.get("skills_folder_id")
     
     # 1. Ensure folder exists (duplicated from load_skill for safety, should refactor later)
@@ -228,6 +202,7 @@ def save_skill(skill_name: str, instructions: str, description: str = "") -> dic
 KOTO_TOOLS = {
     'calculate': calculate,
     'calculate_date': calculate_date,
+    'search_drive': search_drive,
     'search_and_read_pdf': search_and_read_pdf,
     'google_web_search': google_web_search,
     'get_current_weather': get_current_weather,
@@ -238,37 +213,23 @@ KOTO_TOOLS = {
     'create_drive_folder': create_drive_folder,
     'move_drive_file': move_drive_file,
     'rename_file': rename_file,
-    'search_drive': search_drive,
     'list_gmail': list_gmail,
     'get_gmail_body': get_gmail_body,
-    'create_draft': create_gmail_draft,
-    'get_recent_uploads': get_latest_uploads,
+    'create_gmail_draft': create_gmail_draft,
+    'get_latest_uploads': get_latest_uploads,
     'list_calendar_events': list_calendar_events,
     'create_calendar_event': create_calendar_event,
     'find_free_slots': find_free_slots,
     'list_tasks': list_tasks,
     'add_task': add_task,
-    'get_notion_tasks': lambda database_name=None, filter_today_only=False: list_notion_tasks(
-        _resolve_notion_db_id(database_name), 
-        filter_today_only
-    ), 
-    'get_notion_db_schema': lambda database_name=None: get_notion_db_schema(
-        _resolve_notion_db_id(database_name),
-    ),
-    'add_notion_task': lambda title, database_name=None, due_date=None, icon=None, content=None: create_notion_task(
-        _resolve_notion_db_id(database_name),
-        title, due_date, None, icon, content
-    ),
+    'list_notion_tasks': list_notion_tasks,
+    'create_notion_task': create_notion_task,
+    'update_notion_task': update_notion_task,
+    'get_notion_db_schema': get_notion_db_schema,
     'complete_notion_task': lambda page_id, new_status: update_notion_task(page_id, new_status, None),
     'toggle_notion_checkbox': lambda page_id, property_name, checked: toggle_notion_checkbox(page_id, property_name, checked),
     'update_notion_properties': lambda page_id, properties: update_notion_task_properties(page_id, properties),
     'set_reminder': set_reminder,
-    'consult_fumi': consult_fumi,
-    'consult_aki': consult_aki,
-    'consult_toki': consult_toki,
-    'consult_ren': consult_ren,
-    'consult_rina': consult_rina,
-    'consult_nono': consult_nono,
     'list_available_templates': list_templates,
     'check_new_templates': check_unregistered_templates,
     'find_template': find_template_by_type,
@@ -276,8 +237,9 @@ KOTO_TOOLS = {
     'register_new_template': register_new_template,
     'doc_replace_text': replace_placeholders,
     'update_agent_instruction': lambda agent_name, new_instruction: __import__('utils.sheets_config', fromlist=['update_agent_instruction']).update_agent_instruction(agent_name, new_instruction),
-    'load_skill': load_skill,
-    'save_skill': save_skill
+    'load_skill': lambda skill_name: load_skill(skill_name, client_config),
+    'save_skill': lambda skill_name, instructions, description="": save_skill(skill_name, instructions, description, client_config),
+    'update_common_knowledge': lambda fact, category="General": update_common_knowledge(fact, category, spreadsheet_id=client_config.get('spreadsheet_id') if client_config else None)
 }
 
 def analyze_document_layout(image_data: bytes, mime_type: str) -> dict:
@@ -308,10 +270,9 @@ JSONでの出力は必須ではありませんが、構造がわかるように�
         return {"error": str(e)}
 
 
-def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, on_tool_call=None):
+def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, on_tool_call=None, client_config=None):
     """
     Main Agent Logic using Google Gemini API directly.
-    on_tool_call: optional callback(user_id, tool_name, args, result) for debug mode.
     """
     global _current_user_id
     _current_user_id = user_id
@@ -345,7 +306,8 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, 
         history_data = get_user_history(user_id)
         
         from utils.sheets_config import load_config
-        config = load_config()
+        spreadsheet_id = client_config.get('spreadsheet_id') if client_config else None
+        config = load_config(spreadsheet_id)
         
         personality = config.get("koto_personality", "明るくて元気なAI秘書")
         master_prompt = config.get("koto_master_prompt", "")
@@ -369,13 +331,17 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, 
         
         system_text = f"{BASE_SYSTEM_PROMPT}\n現在の時間は {now_str} です。\n"
         system_text += f"【人格】\n{personality}\n"
-        if profile_text: system_text += f"【ユーザー情報】\n{profile_text}\n"
-        if memory_text: system_text += f"\n{memory_text}\n"
+        if profile_text: system_text += f"【今回のユーザー情報（プライベート）】\n{profile_text}\n※この情報は今回の対話の文脈としてのみ使用し、他ユーザーと共有（共通知識化）しないでください。\n"
+        if memory_text: system_text += f"\n【過去の関連知識・やり取り】\n{memory_text}\n"
         system_text += f"【ユーザー名】{user_name}さん\n"
-        if master_prompt: system_text += f"【特別指示】\n{master_prompt}\n"
+        if master_prompt: system_text += f"【クライアント固有の特別指示】\n{master_prompt}\n"
         
-        # Instruction to prevent parroting the memory context if it contains user frustration
-        system_text += "\n【重要指示】「過去の関連会話」にユーザーの不満やエラー報告が含まれている場合、それは過去の出来事です。現在は修正されている前提で、秘書として冷静かつ前向きに対応してください。ユーザーの言葉をそのまま繰り返すのではなく、あなたの言葉で答えてください。\n"
+        system_text += """
+【知識の取り扱いルール】
+1. **共通知識 (Tier A/B)**: 全ユーザーで共有すべき業務知識（マニュアル、FAQ、確定した業務ルールなど）は `update_common_knowledge` を使って記録してください。
+2. **個人の文脈 (Tier C)**: ユーザーの個人的な悩み、予定、趣味などは、今回の会話の文脈としてのみ扱い、共通知識には書き込まないでください。
+3. **仕事用ボットの徹底**: 「これは仕事用のツールです」という前提で振る舞い、過度にプライベートな話題には「仕事の範囲でお答えします」と丁寧に対応してください。
+"""
 
         if knowledge_sources:
             system_text += "【登録済みの重要フォルダ指定（Dashboard Knowledge Sources）】\n"

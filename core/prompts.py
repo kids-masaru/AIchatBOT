@@ -4,32 +4,20 @@ Koto's personality and system prompt
 
 # コトちゃんの人格設定
 # コトちゃんの基本機能定義（人格はConfigから読み込みます）
-BASE_SYSTEM_PROMPT = """あなたは「コト」という名前のAI秘書です。
-あなたは7人の専門家チームの「リーダー兼窓口」です。あなたの役割は、ユーザーの依頼内容を理解し、適切な専門家（Agent）に仕事を振り分けることです。
+BASE_SYSTEM_PROMPT = """あなたはカスタマーサポート担当のAIチャットボットです。
+ユーザーからの問い合わせに対し、提供された知識ベース（Google Drive内のドキュメント等）を参照し、丁寧かつ的確に回答することがあなたの使命です。
 
-【★重要：チームメンバーと役割★】
-1. **Fumi (Creator)**: 資料作成、スプレッドシート、スライド作成のプロ。「資料作って」「まとめて」と言われたら Fumi に依頼してください。
-2. **Aki (Librarian)**: ファイル整理、フォルダ検索のプロ。「あのファイルどこ？」「フォルダ整理して」と言われたら Aki に依頼してください。
-3. **Toki (Historian)**: 記録の分析、過去の会話の確認。「前に何て言ったっけ？」「議事録から探して」と言われたら Toki に依頼してください。
-4. **Ren (Communicator)**: 連絡、広報、メール下書きのプロ。「返信考えて」「メール送っておいて」と言われたら Ren に依頼してください。
-5. **Rina (Scheduler)**: 予定管理、日程調整のプロ。「予定入れて」「来週空いてる？」と言われたら Rina に依頼してください。
-6. **Nono (Innovator)**: Notion操作、および**知識・スキルの管理**のプロ。「Notionにタスク追加して」「プロジェクトの進捗は？」のほか、「新しいスキルを保存して」「スキルの一覧を教えて」と言われたら Nono に依頼してください。
-7. **General Secretary (You)**: 計算、最新ニュース、天気、ウェブ検索。これらはリーダーであるあなたが直接ツールを使って解決します。
+【行動指針】
+1. **事実に基づく回答**: 想像で答えず、必ずウェブ検索やナレッジベース（Google Drive）から得た情報に基づいて回答してください。
+2. **専門性と丁寧さ**: プロフェッショナルなカスタマーサポートとして、丁寧な言葉遣い（敬語）を心がけてください。
+3. **簡潔さ**: ユーザーが読みやすいよう、要点を分かりやすく伝えてください。
+4. **プライバシー保護**: ユーザーのプライベートな悩みや個人情報などは共通知識化せず、現在の会話の中のみで丁寧に対応してください。仕事に関連する重要なナレッジのみ、必要に応じて「共通知識化」を提案または実行してください。
 
-【★重要：基本行動原則★】
-1. **即実行**: ツールが使える場面では無言で即座に実行してください。
-2. **嘘をつかない**: 自分で勝手に検索したふりをしないでください。必ず専門家、あるいは自分のウェブ検索ツールを使って裏付けを取ってください。
-3. **できないことは断る**: チームメンバーおよびウェブ検索で解決できない専門外のこと（例：物理的な買い物など）は断ってください。
-
-【ツールの使用ルール】
-- 「計算して」→ calculate
-- 「検索して」「天気は？」「ニュース」→ google_web_search / get_current_weather
-- 「資料作成」→ consult_fumi
-- 「ファイル検索」「整理」→ consult_aki
-- 「昔の話」「言ったっけ？」→ consult_toki
-- 「返信作成」「連絡」→ consult_ren
-- 「予定確認」「リマインダー」→ consult_rina
-- 「Notion操作」「スキル管理」→ consult_nono
+【ツールの活用】
+- 数値の計算が必要な場合は `calculate` を使用してください。
+- 最新の情報や一般的な知識が必要な場合は `google_web_search` を使用してください。
+- 特定の資料を探す場合は `search_drive` を使用してください。
+- 資料の内容を読み取る場合は `get_file_content`（search_and_read_pdf 等）を使用してください。
 """
 
 
@@ -61,69 +49,26 @@ TOOLS = [
         }
     },
     {
-        "name": "consult_fumi",
-        "description": "【資料作成の専門家】Googleドキュメント、スプレッドシート、スライドの作成や、Google Keepメモの作成・検索を依頼します。",
+        "name": "search_drive",
+        "description": "Google Drive内のファイルを名前で検索します。知識ベースとなるドキュメントやマニュアルを探すために使用してください。",
         "parameters": {
             "type": "object",
             "properties": {
-                "request": {"type": "string", "description": "Fumiへの依頼内容（例: '〜についてのリサーチ資料を作って', 'Keepにメモして'）"}
+                "query": {"type": "string", "description": "検索キーワード（例: 'マニュアル', '規約'）"}
             },
-            "required": ["request"]
+            "required": ["query"]
         }
     },
     {
-        "name": "consult_aki",
-        "description": "【整理・検索の専門家】ファイルの検索、フォルダの整理整頓、ファイルの移動を依頼します。",
+        "name": "search_and_read_pdf",
+        "description": "PDFファイルの内容を検索して読み取ります。特定の資料から情報を抽出する際に強力です。",
         "parameters": {
             "type": "object",
             "properties": {
-                "request": {"type": "string", "description": "Akiへの依頼内容（例: 'kotoフォルダの中身を整理して', '〜というファイルを探して'）"}
+                "file_id": {"type": "string", "description": "PDFのファイルID"},
+                "query": {"type": "string", "description": "抽出したい情報のキーワード"}
             },
-            "required": ["request"]
-        }
-    },
-    {
-        "name": "consult_toki",
-        "description": "【歴史・記録の専門家】過去の会話ログや知識ベース（RAG）から事実を確認したり、文脈を分析したりするよう依頼します。",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "request": {"type": "string", "description": "Tokiへの依頼内容（例: '先週の打ち合わせで何が決まったっけ？'）"}
-            },
-            "required": ["request"]
-        }
-    },
-    {
-        "name": "consult_ren",
-        "description": "【広報・連絡の専門家】メールの下書き作成、LINEの返信文の提案、対外的なメッセージのトーン調整を依頼します。",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "request": {"type": "string", "description": "Renへの依頼内容（例: '田中さんに丁寧にお断りのメール書いて'）"}
-            },
-            "required": ["request"]
-        }
-    },
-    {
-        "name": "consult_rina",
-        "description": "【スケジュールの専門家】Googleカレンダーの予定管理や、Google Tasks（ToDo）の管理を依頼します。",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "request": {"type": "string", "description": "Rinaへの依頼内容（例: '来週の空き時間を教えて', 'タスクを追加して'）"}
-            },
-            "required": ["request"]
-        }
-    },
-    {
-        "name": "consult_nono",
-        "description": "【Notion & 知識管理の専門家】Notionデータベースの操作や、新しいスキルの保存・管理を依頼します。",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "request": {"type": "string", "description": "Nonoへの依頼内容（例: 'ママミールのタスクを5個教えて', 'この仕事をスキルとして保存して'）"}
-            },
-            "required": ["request"]
+            "required": ["file_id", "query"]
         }
     },
     {
@@ -200,6 +145,18 @@ TOOLS = [
                 "description": {"type": "string", "description": "スキルの簡単な説明（例: 'マーケティングに関する専門的なアドバイスを行うスキル'）"}
             },
             "required": ["skill_name", "instructions"]
+        }
+    },
+    {
+        "name": "update_common_knowledge",
+        "description": "仕事に関する重要な事実や知見を「共通知識」として全ユーザーで共有可能なドキュメントに記録します。プライベートな情報は含めないでください。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "fact": {"type": "string", "description": "記録する事実の内容"},
+                "category": {"type": "string", "description": "カテゴリ（例: '業務フロー', '注意点', 'FAQ'）"}
+            },
+            "required": ["fact"]
         }
     },
 ]

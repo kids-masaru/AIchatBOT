@@ -25,3 +25,4 @@ build_log*.txt
 # Local Env
 .env
 .env.local
+master_config.json

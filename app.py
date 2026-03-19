@@ -24,6 +24,7 @@ from utils.sheets_config import load_config, save_config
 from tools.google_ops import search_drive
 from utils.queue import enqueue_message, process_queue_for_user
 from flask_cors import CORS
+from core.clients import registry
 
 app = Flask(__name__)
 # Enable CORS for dashboard - allow all origins and handle preflight
@@ -53,26 +54,30 @@ LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET', '')
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN', '')
 
 
-def verify_signature(body, signature):
+def verify_signature(body, signature, channel_secret):
     """Verify LINE webhook signature"""
-    if not LINE_CHANNEL_SECRET:
+    if not channel_secret:
         return True
     hash_value = hmac.new(
-        LINE_CHANNEL_SECRET.encode('utf-8'),
+        channel_secret.encode('utf-8'),
         body.encode('utf-8'),
         hashlib.sha256
     ).digest()
     return hmac.compare_digest(signature, base64.b64encode(hash_value).decode('utf-8'))
 
 
-def push_message(user_id, texts):
+def push_message(user_id, texts, channel_access_token):
     """Send message via LINE Push API (for async responses)
        texts: string or list of strings
     """
+    if not channel_access_token:
+        print(f"Error: No access token for push to {user_id}", file=sys.stderr)
+        return
+
     url = 'https://api.line.me/v2/bot/message/push'
     headers = {
         'Content-Type': 'application/json',
-        'Authorization': f'Bearer {LINE_CHANNEL_ACCESS_TOKEN}'
+        'Authorization': f'Bearer {channel_access_token}'
     }
     
     # Normalize to list
@@ -109,12 +114,16 @@ def push_message(user_id, texts):
             print(f"Push error: {e}", file=sys.stderr)
 
 
-def reply_message(reply_token, text):
+def reply_message(reply_token, text, channel_access_token):
     """Send message via LINE Reply API (for sync responses)"""
+    if not channel_access_token:
+        print(f"Error: No access token for reply", file=sys.stderr)
+        return
+
     url = 'https://api.line.me/v2/bot/message/reply'
     headers = {
         'Content-Type': 'application/json',
-        'Authorization': f'Bearer {LINE_CHANNEL_ACCESS_TOKEN}'
+        'Authorization': f'Bearer {channel_access_token}'
     }
     
     if len(text) > 4500:
@@ -140,12 +149,13 @@ def reply_message(reply_token, text):
         raise e # Re-raise to trigger fallback to Push in caller
 
 
-def get_line_message_content(message_id):
+def get_line_message_content(message_id, channel_access_token):
     """Download message content (image/file) from LINE"""
+    if not channel_access_token: return None
     # Note: Use api-data.line.me for content
     url = f'https://api-data.line.me/v2/bot/message/{message_id}/content'
     headers = {
-        'Authorization': f'Bearer {LINE_CHANNEL_ACCESS_TOKEN}'
+        'Authorization': f'Bearer {channel_access_token}'
     }
     
     req = urllib.request.Request(url, headers=headers)
@@ -282,13 +292,17 @@ def health_check():
     return 'Koto AI Secretary is running!', 200
 
 
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    """LINE webhook endpoint - returns immediately, processes async"""
+@app.route('/callback/<client_id>', methods=['POST'])
+def callback(client_id):
+    """Multi-tenant LINE webhook endpoint"""
+    client_config = registry.get_client(client_id)
+    if not client_config:
+        return 'Client not found', 404
+    
     signature = request.headers.get('X-Line-Signature', '')
     body = request.get_data(as_text=True)
     
-    if not verify_signature(body, signature):
+    if not verify_signature(body, signature, client_config['line_channel_secret']):
         return 'Invalid signature', 400
     
     try:
@@ -297,69 +311,88 @@ def webhook():
     except Exception:
         return 'OK', 200
     
+    # Process events with client context
     for event in events:
-        event_type = event.get('type')
-        source = event.get('source', {})
-        user_id = source.get('userId', 'unknown')
-        
-        if event_type == 'message':
-            message = event.get('message', {})
-            message_type = message.get('type')
-            
-            reply_token = event.get('replyToken')
-            
-            if message_type == 'text':
-                user_text = message.get('text', '')
-                message_id = message.get('id')
-                print(f"User Text [{user_id[:8]} enqueueing]: {user_text} ID: {message_id}", file=sys.stderr)
-                enqueue_message(user_id, {
-                    'type': 'text',
-                    'text': user_text,
-                    'message_id': message_id,
-                    'reply_token': reply_token
-                })
-                process_queue_for_user(user_id, process_batched_messages)
-                
-            elif message_type == 'image':
-                message_id = message.get('id')
-                print(f"User Image [{user_id[:8]} enqueueing] ID: {message_id}", file=sys.stderr)
-                enqueue_message(user_id, {
-                    'type': 'image',
-                    'message_id': message_id,
-                    'reply_token': reply_token
-                })
-                process_queue_for_user(user_id, process_batched_messages)
-                
-            elif message_type == 'file':
-                message_id = message.get('id')
-                filename = message.get('fileName')
-                print(f"User File [{user_id[:8]} enqueueing] Name: {filename}", file=sys.stderr)
-                enqueue_message(user_id, {
-                    'type': 'file',
-                    'message_id': message_id,
-                    'filename': filename,
-                    'reply_token': reply_token
-                })
-                process_queue_for_user(user_id, process_batched_messages)
-        
-        elif event_type == 'follow':
-            reply_token = event.get('replyToken')
-            clear_user_history(user_id)
-            if reply_token:
-                reply_message(
-                    reply_token,
-                    "あ、こんにちは！コトです😊\n\n"
-                    "色々お手伝いできますよ〜！\n"
-                    "・ドキュメント作成\n"
-                    "・メール確認\n"
-                    "・計算\n"
-                    "・PDF読み取り\n"
-                    "・Web検索\n\n"
-                    "気軽に言ってくださいね！"
-                )
+        process_line_event(event, client_config)
     
-    # Return immediately - processing happens in background
     return 'OK', 200
+
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """Default legacy webhook endpoint"""
+    return callback('default')
+
+
+def process_line_event(event, client_config):
+    """Process a single LINE event with specific client config"""
+    event_type = event.get('type')
+    source = event.get('source', {})
+    user_id = source.get('userId', 'unknown')
+    
+    if event_type == 'message':
+        message = event.get('message', {})
+        message_type = message.get('type')
+        reply_token = event.get('replyToken')
+        
+        # Enqueue with client context
+        task = {
+            'client_id': client_config.get('client_id', 'default'),
+            'type': message_type,
+            'reply_token': reply_token,
+            'message_id': message.get('id'),
+            'text': message.get('text', ''),
+            'filename': message.get('fileName')
+        }
+        
+        enqueue_message(user_id, task)
+        
+        # Process queue in background
+        def run_async():
+            process_queue_for_user(user_id, lambda uid, tasks: process_batched_messages(uid, tasks, client_config))
+        
+        threading.Thread(target=run_async, daemon=True).start()
+        
+    elif event_type == 'follow':
+        reply_token = event.get('replyToken')
+        clear_user_history(user_id)
+        if reply_token:
+            bot_name = client_config.get('bot_name', 'AIchatBOT')
+            reply_message(
+                reply_token,
+                f"こんにちは！{bot_name}です😊\n\n"
+                "何かお手伝いしましょうか？",
+                client_config['line_channel_access_token']
+            )
+
+
+def process_batched_messages(user_id, tasks, client_config):
+    """Process a batch of queued messages for a user with client context"""
+    try:
+        token = client_config['line_channel_access_token']
+        # ... (implementation simplified for now, will refine in next step)
+        combined_text = ""
+        reply_tokens = []
+        
+        for task in tasks:
+            if task['type'] == 'text':
+                combined_text += f"\nユーザー: {task['text']}\n"
+            if task.get('reply_token'):
+                reply_tokens.append(task['reply_token'])
+
+        if not combined_text: return
+
+        # Call AI
+        ai_response = get_gemini_response(user_id, combined_text.strip())
+        
+        # Reply
+        if reply_tokens:
+            reply_message(reply_tokens[-1], ai_response, token)
+        else:
+            push_message(user_id, ai_response, token)
+            
+    except Exception as e:
+        print(f"Batch processing error: {e}", file=sys.stderr)
 
 # Initialize Scheduler
 def check_reminders():
@@ -476,51 +509,9 @@ def run_profiler():
 
 @app.route('/cron', methods=['GET'])
 def cron_job():
-    """Manual trigger for reminders - Profiler runs in background to avoid timeout"""
-    import threading
-    
-    # 1. Run Reminders in background thread (can be slow due to Gemini/Notion/Weather APIs)
-    def run_reminders_background():
-        try:
-            check_reminders()
-        except Exception as e:
-            print(f"Cron Reminder Error (background): {e}", file=sys.stderr)
-            
-    reminder_thread = threading.Thread(target=run_reminders_background, daemon=True)
-    reminder_thread.start()
-    print("Cron: Reminders started in background thread", file=sys.stderr)
-        
-    # 2. Run Profiler in background thread (slow, avoid timeout)
-    def run_profiler_background():
-        try:
-            # ----- Daily Notion Ingestion (3 AM JST) -----
-            import datetime
-            jst = datetime.timezone(datetime.timedelta(hours=9))
-            now = datetime.datetime.now(jst)
-            
-            # Execute exactly once per day at 3 AM
-            if now.hour == 3:
-                try:
-                    from core.notion_ingester import run_daily_notion_ingestion
-                    from utils.user_db import get_active_users
-                    users = get_active_users()
-                    print(f"Cron: Starting Daily Notion Ingestion for {len(users)} users at {now.strftime('%H:%M')} JST", file=sys.stderr)
-                    for user in users:
-                        run_daily_notion_ingestion(user['user_id'])
-                except Exception as e:
-                    import traceback
-                    print(f"Daily Ingestion Error (background): {e}\n{traceback.format_exc()}", file=sys.stderr)
-            # ---------------------------------------------
-            
-            run_profiler()
-        except Exception as e:
-            print(f"Cron Profiler Error (background): {e}", file=sys.stderr)
-    
-    profiler_thread = threading.Thread(target=run_profiler_background, daemon=True)
-    profiler_thread.start()
-    print("Cron: Profiler started in background thread", file=sys.stderr)
-
-    return 'Cron job executed', 200
+    """Background jobs are disabled for AIchatBOT."""
+    print("Cron: Background jobs are currently disabled.", file=sys.stderr)
+    return 'Cron disabled', 200
 
 @app.route('/debug/run-profiler', methods=['POST'])
 def debug_run_profiler():
