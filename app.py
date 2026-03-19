@@ -48,6 +48,12 @@ def vector_status():
     except Exception as e:
         return json.dumps({"error": str(e)}), 500, {'Content-Type': 'application/json'}
 
+@app.route('/debug/clients')
+def debug_clients():
+    """List registered client IDs for debugging (secrets masked)"""
+    clients = registry.list_clients()
+    return json.dumps({"registered_clients": clients}), 200, {'Content-Type': 'application/json'}
+
 
 # LINE credentials
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET', '')
