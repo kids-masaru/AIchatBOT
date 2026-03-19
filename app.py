@@ -52,7 +52,10 @@ def vector_status():
 def debug_clients():
     """List registered client IDs for debugging (secrets masked)"""
     clients = registry.list_clients()
-    return json.dumps({"registered_clients": clients}), 200, {'Content-Type': 'application/json'}
+    return json.dumps({
+        "registered_clients": clients,
+        "config_error": registry.error
+    }), 200, {'Content-Type': 'application/json'}
 
 
 # LINE credentials
