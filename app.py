@@ -10,7 +10,7 @@ import hmac
 import base64
 import urllib.request
 import threading
-from flask import Flask, request
+from flask import Flask, request, render_template_string
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -27,6 +27,180 @@ from flask_cors import CORS
 from core.clients import registry
 
 app = Flask(__name__)
+
+@app.route('/admin', methods=['GET', 'POST'])
+def admin_panel():
+    """Simple management dashboard for the AIchatBOT fleet"""
+    # Simple password protection
+    password = os.environ.get('ADMIN_PASSWORD', 'admin123')
+    if request.args.get('pw') != password:
+        return "Unauthorized: Please provide the correct password via ?pw=PASSWORD", 401
+    
+    # Manual reload trigger
+    if request.args.get('reload') == '1':
+        registry.load_registry()
+        return "Registry reloaded from Google Sheet", 200
+        
+    clients = registry.load_registry()
+    sheet_id = registry.registry_sheet_id
+    
+    # Premium UI with inline CSS
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>AIchatBOT Admin</title>
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+            body {{
+                font-family: 'Inter', system-ui, -apple-system, sans-serif;
+                background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+                color: #f8fafc;
+                margin: 0;
+                padding: 2rem;
+                min-height: 100vh;
+            }}
+            .container {{ max-width: 900px; margin: 0 auto; }}
+            .header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }}
+            h1 {{
+                font-size: 2.25rem;
+                font-weight: 700;
+                background: linear-gradient(to right, #38bdf8, #818cf8);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                margin: 0;
+            }}
+            .card {{
+                background: rgba(30, 41, 59, 0.7);
+                backdrop-filter: blur(12px);
+                border: 1px solid rgba(148, 163, 184, 0.1);
+                border-radius: 16px;
+                padding: 1.5rem;
+                margin-bottom: 1.5rem;
+                box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            }}
+            .card h2 {{ font-size: 1.25rem; margin-top: 0; color: #94a3b8; border-bottom: 1px solid rgba(148, 163, 184, 0.1); padding-bottom: 0.75rem; }}
+            .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }}
+            .stat-box {{ padding: 1rem; background: rgba(15, 23, 42, 0.5); border-radius: 12px; }}
+            .stat-value {{ font-size: 1.5rem; font-weight: 700; color: #38bdf8; }}
+            .stat-label {{ font-size: 0.875rem; color: #64748b; }}
+            
+            .client-list {{ list-style: none; padding: 0; margin: 0.5rem 0; }}
+            .client-item {{
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                background: rgba(15, 23, 42, 0.3);
+                padding: 1rem;
+                border-radius: 12px;
+                margin-bottom: 0.75rem;
+                transition: transform 0.2s;
+            }}
+            .client-item:hover {{ transform: translateX(5px); background: rgba(15, 23, 42, 0.5); }}
+            .client-info {{ display: flex; flex-direction: column; }}
+            .client-id {{ font-family: monospace; color: #f472b6; font-weight: 600; font-size: 1rem; }}
+            .client-name {{ font-size: 0.875rem; color: #94a3b8; margin-top: 0.25rem; }}
+            
+            .badge {{
+                display: inline-block;
+                padding: 0.25rem 0.5rem;
+                border-radius: 9999px;
+                font-size: 0.75rem;
+                font-weight: 600;
+                background: rgba(56, 189, 248, 0.1);
+                color: #38bdf8;
+                margin-top: 0.5rem;
+            }}
+
+            .btn {{
+                background: linear-gradient(to right, #38bdf8, #2563eb);
+                color: white;
+                padding: 0.75rem 1.5rem;
+                border-radius: 10px;
+                text-decoration: none;
+                font-weight: 600;
+                border: none;
+                cursor: pointer;
+                transition: all 0.2s;
+                font-size: 0.875rem;
+            }}
+            .btn:hover {{ opacity: 0.9; transform: translateY(-1px); }}
+            .btn-secondary {{ background: rgba(51, 65, 85, 0.5); color: #94a3b8; }}
+            .btn-secondary:hover {{ background: rgba(51, 65, 85, 0.8); }}
+            
+            .link-icon {{ width: 1.25rem; height: 1.25rem; vertical-align: middle; }}
+            .footer {{ text-align: center; color: #475569; font-size: 0.875rem; margin-top: 3rem; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>AIchatBOT Admin</h1>
+                <button class="btn" onclick="reloadRegistry()">名簿を再読込</button>
+            </div>
+            
+            <div class="card">
+                <h2>📈 システム稼働状況</h2>
+                <div class="stats">
+                    <div class="stat-box">
+                        <div class="stat-label">登録ボット数</div>
+                        <div class="stat-value">{len(clients)}</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">マスタ名簿</div>
+                        <a href="https://docs.google.com/spreadsheets/d/{sheet_id}/edit" target="_blank" class="link-label" style="color: #38bdf8; text-decoration: none; font-size: 0.875rem; display: block; margin-top: 0.5rem;">🔗 シートを開く</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>🤖 稼働中のボット一覧</h2>
+                <ul class="client-list">
+                    {"".join([f'''
+                    <li class="client-item">
+                        <div class="client-info">
+                            <span class="client-id">{cid}</span>
+                            <span class="client-name">{c.get("bot_name", "名称未設定")}</span>
+                            <span class="badge">{c.get("personality", "標準性格")}</span>
+                        </div>
+                        <a href="https://docs.google.com/spreadsheets/d/{c.get("spreadsheet_id", "")}/edit" target="_blank" class="btn btn-secondary">設定確認</a>
+                    </li>
+                    ''' for cid, c in clients.items()])}
+                </ul>
+            </div>
+
+            <div class="footer">
+                <p>AIchatBOT Fleet Management System &copy; 2024</p>
+                <p style="font-size: 0.75rem;">🔒 パスワード保護されています (ADMIN_PASSWORD)</p>
+            </div>
+        </div>
+
+        <script>
+            function reloadRegistry() {{
+                const btn = event.target;
+                const originalText = btn.innerText;
+                btn.innerText = "読み込み中...";
+                btn.disabled = true;
+                
+                fetch(window.location.search + '&reload=1')
+                    .then(res => res.text())
+                    .then(msg => {{
+                        alert("名簿を更新しました！");
+                        location.reload();
+                    }})
+                    .catch(err => {{
+                        alert("エラーが発生しました: " + err);
+                        btn.innerText = originalText;
+                        btn.disabled = false;
+                    }});
+            }}
+        </script>
+    </body>
+    </html>
+    """
+    return render_template_string(html)
 # Enable CORS for dashboard - allow all origins and handle preflight
 CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST", "OPTIONS"], "allow_headers": ["Content-Type"]}})
 
