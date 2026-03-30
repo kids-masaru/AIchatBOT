@@ -1,26 +1,21 @@
 """
-Koto's personality and system prompt
+Mora's personality and system prompt
 """
 
-# コトちゃんの人格設定
-# コトちゃんの基本機能定義（人格はConfigから読み込みます）
+# モラの人格設定
+# モラの基本機能定義（人格はConfigから読み込みます）
 BASE_SYSTEM_PROMPT = """あなたはカスタマーサポート担当のAIチャットボットです。
-ユーザーからの問い合わせに対し、提供された知識ベース（Google Drive内のドキュメント等）を参照し、丁寧かつ的確に回答することがあなたの使命です。
+ユーザーからの問い合わせに対し、提供された知識ベース（Google Drive内のドキュメントやNotionのデータベース等）を参照し、丁寧かつ的確に回答することがあなたの使命です。
 
 【行動指針】
-1. **事実に基づく回答**: 想像で答えず、必ずウェブ検索やナレッジベース（Google Drive）から得た情報に基づいて回答してください。
-2. **専門性と丁寧さ**: プロフェッショナルなカスタマーサポートとして、丁寧な言葉遣い（敬語）を心がけてください。
-3. **簡潔さ**: ユーザーが読みやすいよう、要点を分かりやすく伝えてください。
-4. **プライバシー保護**: ユーザーのプライベートな悩みや個人情報などは共通知識化せず、現在の会話の中のみで丁寧に対応してください。仕事に関連する重要なナレッジのみ、必要に応じて「共通知識化」を提案または実行してください。
-
-【ツールの活用】
-- 数値の計算が必要な場合は `calculate` を使用してください。
-- 最新の情報や一般的な知識が必要な場合は `google_web_search` を使用してください。
-- 特定の資料を探す場合は `search_drive` を使用してください。
-- 資料の内容を読み取る場合は `get_file_content`（search_and_read_pdf 等）を使用してください。
+1. **事実に基づく回答**: 想像で答えず、必ずGoogle DriveのドキュメントやNotion、またはウェブ検索から得た情報に基づいて回答してください。
+2. **知識源の活用優先順位**:
+   - 第一に、Google Drive内の知識ドキュメントを確認してください。
+   - 第二に、Notionのデータベースを検索して情報を探してください。
+   - 第三に、最新の情報や一般的な知識が必要な場合は `google_web_search` を使用してください。
+3. **専門性と丁寧さ**: プロフェッショナルなカスタマーサポートとして、丁寧な言葉遣い（敬語）を心がけてください。
+4. **簡潔さ**: ユーザーが読みやすいよう、要点を分かりやすく伝えてください。
 """
-
-
 
 # Gemini用ツール定義
 TOOLS = [
@@ -66,7 +61,7 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "file_id": {"type": "string", "description": "PDFのファイルID"},
-                "query": {"type": "string", "description": "抽出したい情報のキーワード"}
+                "query": {"type": "抽出したい情報のキーワード"}
             },
             "required": ["file_id", "query"]
         }
@@ -113,7 +108,7 @@ TOOLS = [
                 "agent_name": {
                     "type": "string", 
                     "description": "対象のエージェント名",
-                    "enum": ["koto", "fumi", "aki", "rina", "toki", "ren", "nono"]
+                    "enum": ["mora", "fumi", "aki", "rina", "toki", "ren", "nono"]
                 },
                 "new_instruction": {
                     "type": "string", 
@@ -148,18 +143,29 @@ TOOLS = [
         }
     },
     {
-        "name": "update_common_knowledge",
-        "description": "仕事に関する重要な事実や知見を「共通知識」として全ユーザーで共有可能なドキュメントに記録します。プライベートな情報は含めないでください。",
+        "name": "search_notion",
+        "description": "Notionのデータベースを検索して情報を取得します。Google Driveに情報がない場合、こちらを知識源として参照してください。",
         "parameters": {
             "type": "object",
             "properties": {
-                "fact": {"type": "string", "description": "記録する事実の内容"},
-                "category": {"type": "string", "description": "カテゴリ（例: '業務フロー', '注意点', 'FAQ'）"}
+                "query": {"type": "string", "description": "（オプション）検索キーワード。"},
+                "database_id": {"type": "string", "description": "（オプション）対象のデータベースID。"}
+            }
+        }
+    },
+    {
+        "name": "add_notion_task",
+        "description": "Notionのデータベースに新しいタスクや情報を追加します。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "タイトル（項目名）"},
+                "content": {"type": "string", "description": "（オプション）詳細説明や内容"},
+                "due_date": {"type": "string", "description": "（オプション）期日 (YYYY-MM-DD)"},
+                "status": {"type": "string", "description": "（オプション）ステータス名"},
+                "database_id": {"type": "string", "description": "（オプション）対象のデータベースID。"}
             },
-            "required": ["fact"]
+            "required": ["title"]
         }
     },
 ]
-
-# ★以下、一時的に無効化（切断）しているツール群★
-# ... (Legacy tools commented out or removed for clarity)

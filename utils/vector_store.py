@@ -12,7 +12,7 @@ from pinecone import Pinecone, ServerlessSpec
 # Config
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
 PINECONE_ENV = "us-east-1" 
-INDEX_NAME = "koto-memory-v2"
+INDEX_NAME = "mora-memory-v2"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 class GeminiEmbedder:
@@ -137,7 +137,7 @@ def save_user_profile(user_id: str, profile_data: Dict) -> bool:
     try:
         # Profile doesn't technically need embedding if we only fetch by ID,
         # but we might want to search profiles? 
-        # For Koto, we usually just GET profile by ID.
+        # For Mora, we usually just GET profile by ID.
         # Let's use simple dummy vector or embed the summary.
         
         profile_text = json.dumps(profile_data, ensure_ascii=False)
@@ -182,7 +182,7 @@ def get_context_summary(user_id: str, query: str) -> str:
         
     summary = "【過去の関連会話】\n"
     for m in matches:
-        role = "ユーザー" if m['role'] == 'user' else "コト"
+        role = "ユーザー" if m['role'] == 'user' else "モラ"
         summary += f"- {role}: {m['text']}\n"
     return summary
 

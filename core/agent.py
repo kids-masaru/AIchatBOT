@@ -1,5 +1,5 @@
 """
-Koto Agent - AI Logic (Gemini API Version)
+Mora Agent - AI Logic (Gemini API Version)
 Handles conversation with Google Gemini API and tool execution.
 """
 import os
@@ -94,7 +94,7 @@ def _resolve_notion_db_id(client_config=None, database_name=None):
 
 def load_skill(skill_name: str, client_config=None) -> dict:
     """
-    Find and load a skill (prompt) from the KOTO_SKILLS folder.
+    Find and load a skill (prompt) from the MORA_SKILLS folder.
     """
     from utils.sheets_config import load_config, save_config
     from tools.google_ops import search_drive, read_drive_file, create_drive_folder
@@ -104,16 +104,16 @@ def load_skill(skill_name: str, client_config=None) -> dict:
     
     if not folder_id:
         # Try to find existing folder
-        print(f"[Agent] Skills folder ID missing. Searching for 'KOTO_SKILLS'...", file=sys.stderr)
-        res = search_drive("KOTO_SKILLS")
+        print(f"[Agent] Skills folder ID missing. Searching for 'MORA_SKILLS'...", file=sys.stderr)
+        res = search_drive("MORA_SKILLS")
         folders = [f for f in res.get("files", []) if f.get("mimeType") == "application/vnd.google-apps.folder"]
         
         if folders:
             folder_id = folders[0]["id"]
         else:
             # Create if not found
-            print(f"[Agent] Creating 'KOTO_SKILLS' folder...", file=sys.stderr)
-            new_folder = create_drive_folder("KOTO_SKILLS")
+            print(f"[Agent] Creating 'MORA_SKILLS' folder...", file=sys.stderr)
+            new_folder = create_drive_folder("MORA_SKILLS")
             folder_id = new_folder.get("id")
             
         if folder_id:
@@ -129,7 +129,7 @@ def load_skill(skill_name: str, client_config=None) -> dict:
     files = res.get("files", [])
     
     if not files:
-        return {"error": f"スキル「{skill_name}」が見つかりませんでした。KOTO_SKILLSフォルダ内にファイルを作成してください。"}
+        return {"error": f"スキル「{skill_name}」が見つかりませんでした。MORA_SKILLSフォルダ内にファイルを作成してください。"}
     
     # Read the first match
     file_id = files[0]["id"]
@@ -148,7 +148,7 @@ def load_skill(skill_name: str, client_config=None) -> dict:
 
 def save_skill(skill_name: str, instructions: str, description: str = "", client_config=None) -> dict:
     """
-    Save a new skill (prompt) to the KOTO_SKILLS folder.
+    Save a new skill (prompt) to the MORA_SKILLS folder.
     """
     from utils.sheets_config import load_config, save_config
     from tools.google_ops import search_drive, create_drive_folder, create_google_doc
@@ -158,12 +158,12 @@ def save_skill(skill_name: str, instructions: str, description: str = "", client
     
     # 1. Ensure folder exists (duplicated from load_skill for safety, should refactor later)
     if not folder_id:
-        res = search_drive("KOTO_SKILLS")
+        res = search_drive("MORA_SKILLS")
         folders = [f for f in res.get("files", []) if f.get("mimeType") == "application/vnd.google-apps.folder"]
         if folders:
             folder_id = folders[0]["id"]
         else:
-            new_folder = create_drive_folder("KOTO_SKILLS")
+            new_folder = create_drive_folder("MORA_SKILLS")
             folder_id = new_folder.get("id")
         if folder_id:
             config["skills_folder_id"] = folder_id
@@ -199,7 +199,7 @@ def save_skill(skill_name: str, instructions: str, description: str = "", client
 
 
 # Map tool names to functions
-KOTO_TOOLS = {
+MORA_TOOLS = {
     'calculate': calculate,
     'calculate_date': calculate_date,
     'search_drive': search_drive,
@@ -222,8 +222,8 @@ KOTO_TOOLS = {
     'find_free_slots': find_free_slots,
     'list_tasks': list_tasks,
     'add_task': add_task,
-    'list_notion_tasks': list_notion_tasks,
-    'create_notion_task': create_notion_task,
+    'search_notion': lambda query=None, database_id=None: list_notion_tasks(database_id or _resolve_notion_db_id(client_config)),
+    'add_notion_task': lambda title, content=None, due_date=None, status=None, database_id=None: create_notion_task(database_id or _resolve_notion_db_id(client_config), title, due_date, status, content=content),
     'update_notion_task': update_notion_task,
     'get_notion_db_schema': get_notion_db_schema,
     'complete_notion_task': lambda page_id, new_status: update_notion_task(page_id, new_status, None),
@@ -309,8 +309,8 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, 
         spreadsheet_id = client_config.get('spreadsheet_id') if client_config else None
         config = load_config(spreadsheet_id)
         
-        personality = config.get("koto_personality", "明るくて元気なAI秘書")
-        master_prompt = config.get("koto_master_prompt", "")
+        personality = config.get("mora_personality", "明るくて元気なAI秘書")
+        master_prompt = config.get("mora_master_prompt", "")
         # Fix: Use JST explicitly (Railway runs in UTC)
         jst = datetime.timezone(datetime.timedelta(hours=9))
         now_str = datetime.datetime.now(jst).strftime('%Y-%m-%d %H:%M:%S (%A)')
@@ -396,7 +396,7 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, 
         )
 
         # Manual Tool Execution Loop
-        # FunctionDeclaration-based tools require manual dispatch via KOTO_TOOLS dict
+        # FunctionDeclaration-based tools require manual dispatch via MORA_TOOLS dict
         response = client.models.generate_content(
             model="gemini-3-flash-preview",
             contents=contents,
@@ -423,9 +423,9 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, 
                 
                 print(f"[Agent] Executing tool: {fn_name} with {fn_args}", file=sys.stderr)
                 
-                if fn_name in KOTO_TOOLS:
+                if fn_name in MORA_TOOLS:
                     try:
-                        result = KOTO_TOOLS[fn_name](**fn_args)
+                        result = MORA_TOOLS[fn_name](**fn_args)
                     except Exception as tool_err:
                         result = {"error": f"Tool execution failed: {str(tool_err)}"}
                         print(f"[Agent] Tool error ({fn_name}): {tool_err}", file=sys.stderr)

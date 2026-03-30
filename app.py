@@ -1,5 +1,5 @@
 """
-Koto AI Secretary - LINE Bot Entry Point
+Mora AI Secretary - LINE Bot Entry Point
 Flask server with asynchronous message processing and Config API
 """
 import os
@@ -208,7 +208,7 @@ CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST", "OPT
 @app.route('/')
 def healthcheck():
     """Health check endpoint for Railway/deployment platforms"""
-    return 'KOTO is running!', 200
+    return 'MORA is running!', 200
 
 
 @app.route('/debug/vector-status')
@@ -428,7 +428,7 @@ def process_batched_messages(user_id, tasks):
             except Exception as e:
                 print(f"Debug push error: {e}", file=sys.stderr)
         
-        # Pass the combined text to Koto
+        # Pass the combined text to Mora
         ai_response = get_gemini_response(
             user_id, 
             combined_text.strip(), 
@@ -463,7 +463,7 @@ def process_batched_messages(user_id, tasks):
 @app.route('/', methods=['GET'])
 def health_check():
     """Health check endpoint"""
-    return 'Koto AI Secretary is running!', 200
+    return 'Mora AI Secretary is running!', 200
 
 
 @app.route('/callback/<client_id>', methods=['POST'])
@@ -852,7 +852,7 @@ def list_folders():
 
 @app.route('/api/skills', methods=['GET', 'OPTIONS'])
 def list_skills():
-    """List skills from Google Drive KOTO_SKILLS folder"""
+    """List skills from Google Drive MORA_SKILLS folder"""
     if request.method == 'OPTIONS':
         response = app.make_default_options_response()
         response.headers['Access-Control-Allow-Origin'] = '*'
@@ -867,7 +867,7 @@ def list_skills():
         if not folder_id:
              # Try search if ID missing
              from tools.google_ops import search_drive
-             res = search_drive("KOTO_SKILLS")
+             res = search_drive("MORA_SKILLS")
              folders = [f for f in res.get("files", []) if f.get("mimeType") == "application/vnd.google-apps.folder"]
              if folders:
                  folder_id = folders[0]["id"]
@@ -894,5 +894,5 @@ def list_skills():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
-    print(f"Starting Koto AI Secretary on port {port}...", file=sys.stderr)
+    print(f"Starting Mora AI Secretary on port {port}...", file=sys.stderr)
     app.run(host='0.0.0.0', port=port)
