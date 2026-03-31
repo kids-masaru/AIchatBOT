@@ -31,52 +31,51 @@ TOKI_CORE_ROLE = """
 3. 得られた情報の「日付」「出典」を明記して回答。情報がない場合は正直に「記録にありません」と答える。
 """
 
-# Wrapper tools for Gemini
-def search_kb_tool(query: str) -> str:
-    """Search the Knowledge Base for documents and notes.
-    
-    Args:
-        query: Search query string
-    
-    Returns:
-        JSON string with search results
-    """
-    results = search_knowledge_base(query, n_results=5)
-    return json.dumps(results, ensure_ascii=False)
-
 class HistorianAgent:
     def __init__(self):
         self.model_name = "gemini-3-flash-preview"
         self.client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-        self.tools = [search_kb_tool]
-        
-    def run(self, user_request: str, user_id: str = None) -> str:
+
+    def run(self, user_request: str, user_id: str = "", client_id: str = "default") -> str:
         """
         Execute the historian task using google-genai SDK.
         """
         print(f"Historian(Toki): Starting with request: {user_request}", file=sys.stderr)
-        
+
+        # Build a closure-based search tool scoped to this request's user/client
+        def search_kb_tool(query: str) -> str:
+            """Search the Knowledge Base for documents and notes.
+
+            Args:
+                query: Search query string
+
+            Returns:
+                JSON string with search results
+            """
+            results = search_knowledge_base(query, n_results=5, user_id=user_id, client_id=client_id)
+            return json.dumps(results, ensure_ascii=False)
+
         # 1. Load User Configuration
         config_data = load_config()
         user_instruction = config_data.get('toki_instruction', '')
-        
+
         # 2. Construct System Prompt
         import datetime
         jst = datetime.timezone(datetime.timedelta(hours=9))
         now_str = datetime.datetime.now(jst).strftime('%Y-%m-%d %H:%M:%S (%A)')
-        
+
         system_instruction = f"{TOKI_CORE_ROLE}\n\n現在のシステム日時: {now_str}\n\n"
-        
+
         if user_instruction:
             system_instruction += f"【ユーザーからの追加指示（性格・振る舞い）】\n{user_instruction}\n"
             system_instruction += "※Core Role（記録の分析・提示）を最優先してください。"
-            
+
         try:
             # Prepare contents
             contents = [types.Content(role="user", parts=[types.Part.from_text(text=user_request)])]
-            
+
             gen_config = types.GenerateContentConfig(
-                tools=self.tools,
+                tools=[search_kb_tool],
                 system_instruction=system_instruction,
                 temperature=0.2,
             )

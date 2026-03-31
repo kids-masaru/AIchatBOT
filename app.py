@@ -28,6 +28,13 @@ from core.clients import registry
 
 app = Flask(__name__)
 
+def _check_admin_auth(req) -> bool:
+    """管理者パスワード認証（クエリパラメータ ?pw= またはリクエストボディの pw フィールド）"""
+    password = os.environ.get('ADMIN_PASSWORD', 'admin123')
+    return (req.args.get('pw') == password
+            or (req.json or {}).get('pw') == password)
+
+
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_panel():
     """Simple management dashboard for the AIchatBOT fleet"""
@@ -693,6 +700,178 @@ def debug_run_profiler():
     run_profiler()
     return 'Profiler executed', 200
 
+# ─── T19: エスカレーション管理 API ────────────────────────────────────────────
+
+# ─── T22: Google Meet議事録 API ───────────────────────────────────────────────
+
+@app.route('/admin/minutes/process', methods=['POST'])
+def process_meeting_minutes():
+    """
+    MEET_TRANSCRIPT_FOLDERの新しい文字起こしを処理して議事録を生成し、
+    IZAKI_LINE_USER_IDにLINEで送信する（管理者認証必須）。
+    手動実行 or スケジューラーから呼び出す。
+    """
+    if not _check_admin_auth(request):
+        return json.dumps({"error": "Unauthorized"}), 401, {'Content-Type': 'application/json'}
+
+    if not os.environ.get("MEET_TRANSCRIPT_FOLDER_ID"):
+        return json.dumps({"error": "MEET_TRANSCRIPT_FOLDER_IDが未設定です"}), 503, {'Content-Type': 'application/json'}
+
+    izaki_id = os.environ.get('IZAKI_LINE_USER_ID')
+    default_config = registry.get_client('default') or {}
+    token = default_config.get('line_channel_access_token') or os.environ.get('LINE_CHANNEL_ACCESS_TOKEN', '')
+
+    from utils.meeting_minutes import process_new_transcripts
+    processed = process_new_transcripts(notify_line_user_id=izaki_id, access_token=token)
+
+    return json.dumps({
+        "processed": processed,
+        "count": len(processed)
+    }, ensure_ascii=False), 200, {'Content-Type': 'application/json'}
+
+# ─── T19: エスカレーション管理 API ────────────────────────────────────────────
+
+@app.route('/admin/escalations', methods=['GET'])
+def list_escalations():
+    """未回答のエスカレーション一覧を返す（管理者認証必須）"""
+    if not _check_admin_auth(request):
+        return json.dumps({"error": "Unauthorized"}), 401, {'Content-Type': 'application/json'}
+
+    from utils.escalation import get_pending_escalations
+    escalations = get_pending_escalations()
+    return json.dumps(escalations, ensure_ascii=False), 200, {'Content-Type': 'application/json'}
+
+# ─── T21: フィードバック API ──────────────────────────────────────────────────
+
+@app.route('/admin/feedback', methods=['GET'])
+def list_feedback():
+    """フィードバック未評価の回答一覧（管理者認証必須）"""
+    if not _check_admin_auth(request):
+        return json.dumps({"error": "Unauthorized"}), 401, {'Content-Type': 'application/json'}
+
+    if not os.environ.get("FEEDBACK_SHEET_ID"):
+        return json.dumps({"error": "FEEDBACK_SHEET_IDが未設定です"}), 503, {'Content-Type': 'application/json'}
+
+    try:
+        from utils.feedback import _get_sheet_service
+        service = _get_sheet_service()
+        if not service:
+            return json.dumps({"error": "Sheet接続エラー"}), 500, {'Content-Type': 'application/json'}
+        result = service.spreadsheets().values().get(
+            spreadsheetId=os.environ.get("FEEDBACK_SHEET_ID"),
+            range='A:H'
+        ).execute()
+        rows = result.get('values', [])[1:]
+        pending = [
+            {'id': r[0], 'timestamp': r[1], 'client_id': r[2],
+             'question': r[4] if len(r) > 4 else '', 'response': r[5] if len(r) > 5 else ''}
+            for r in rows if len(r) >= 7 and not r[6]
+        ]
+        return json.dumps(pending, ensure_ascii=False), 200, {'Content-Type': 'application/json'}
+    except Exception as e:
+        return json.dumps({"error": str(e)}), 500, {'Content-Type': 'application/json'}
+
+@app.route('/admin/feedback/<feedback_id>', methods=['POST'])
+def submit_feedback(feedback_id):
+    """フィードバックを記録する（管理者認証必須）
+    Body: {"pw": "...", "rating": "○" or "×", "comment": "（×の場合の修正内容）"}
+    """
+    if not _check_admin_auth(request):
+        return json.dumps({"error": "Unauthorized"}), 401, {'Content-Type': 'application/json'}
+
+    data = request.json or {}
+    rating = data.get('rating', '').strip()
+    if rating not in ('○', '×'):
+        return json.dumps({"error": "rating must be ○ or ×"}), 400, {'Content-Type': 'application/json'}
+
+    from utils.feedback import record_feedback
+    success = record_feedback(feedback_id, rating, data.get('comment', ''))
+    if success:
+        return json.dumps({"success": True}), 200, {'Content-Type': 'application/json'}
+    return json.dumps({"error": "Feedback not found"}), 404, {'Content-Type': 'application/json'}
+
+@app.route('/admin/feedback/digest', methods=['POST'])
+def send_feedback_digest():
+    """未評価の回答を井崎さんのLINEに日次ダイジェストで送る（管理者認証必須）"""
+    if not _check_admin_auth(request):
+        return json.dumps({"error": "Unauthorized"}), 401, {'Content-Type': 'application/json'}
+
+    izaki_id = os.environ.get('IZAKI_LINE_USER_ID')
+    if not izaki_id:
+        return json.dumps({"error": "IZAKI_LINE_USER_ID未設定"}), 503, {'Content-Type': 'application/json'}
+
+    from utils.feedback import _get_sheet_service
+    service = _get_sheet_service()
+    if not service:
+        return json.dumps({"error": "Sheet接続エラー"}), 500, {'Content-Type': 'application/json'}
+
+    result = service.spreadsheets().values().get(
+        spreadsheetId=os.environ.get("FEEDBACK_SHEET_ID", ""),
+        range='A:H'
+    ).execute()
+    rows = [r for r in result.get('values', [])[1:] if len(r) >= 7 and not r[6]][:5]  # 最大5件
+
+    if not rows:
+        return json.dumps({"message": "未評価なし"}), 200, {'Content-Type': 'application/json'}
+
+    lines = ["【フィードバック依頼】未評価の回答があります\n"]
+    for row in rows:
+        fb_id = row[0]
+        q = row[4][:80] if len(row) > 4 else ''
+        r = row[5][:80] if len(row) > 5 else ''
+        lines.append(f"▶ {fb_id}\nQ: {q}\nA: {r}\n評価: 「{fb_id} ○」または「{fb_id} × 修正内容」")
+
+    default_config = registry.get_client('default') or {}
+    token = default_config.get('line_channel_access_token') or os.environ.get('LINE_CHANNEL_ACCESS_TOKEN', '')
+    push_message(izaki_id, "\n\n".join(lines), token)
+    return json.dumps({"success": True, "sent": len(rows)}), 200, {'Content-Type': 'application/json'}
+
+# ─── T20: 問い合わせレポート API ─────────────────────────────────────────────
+
+@app.route('/admin/report', methods=['GET'])
+def inquiry_report():
+    """問い合わせレポートを生成して返す（管理者認証必須）
+    クエリパラメータ:
+      ?period=weekly|monthly  （デフォルト: weekly）
+      ?client_id=xxx          （省略時は全クライアント）
+      ?send_line=1            （1を指定すると井崎さんのLINEにも送信）
+    """
+    if not _check_admin_auth(request):
+        return json.dumps({"error": "Unauthorized"}), 401, {'Content-Type': 'application/json'}
+
+    from utils.inquiry_log import generate_report
+    period = request.args.get('period', 'weekly')
+    target_client = request.args.get('client_id', None)
+    report_text = generate_report(client_id=target_client, period=period)
+
+    # LINE送信オプション
+    if request.args.get('send_line') == '1':
+        izaki_id = os.environ.get('IZAKI_LINE_USER_ID')
+        if izaki_id:
+            default_config = registry.get_client('default') or {}
+            token = default_config.get('line_channel_access_token') or os.environ.get('LINE_CHANNEL_ACCESS_TOKEN', '')
+            if token:
+                push_message(izaki_id, report_text, token)
+
+    return json.dumps({"report": report_text}, ensure_ascii=False), 200, {'Content-Type': 'application/json'}
+
+@app.route('/admin/escalations/<escalation_id>/resolve', methods=['POST'])
+def resolve_escalation_endpoint(escalation_id):
+    """エスカレーションに回答し、元ユーザーへ送信する（管理者認証必須）"""
+    if not _check_admin_auth(request):
+        return json.dumps({"error": "Unauthorized"}), 401, {'Content-Type': 'application/json'}
+
+    data = request.json or {}
+    answer = data.get('answer', '').strip()
+    if not answer:
+        return json.dumps({"error": "answer is required"}), 400, {'Content-Type': 'application/json'}
+
+    from utils.escalation import resolve_escalation
+    success = resolve_escalation(escalation_id, answer)
+    if success:
+        return json.dumps({"success": True}), 200, {'Content-Type': 'application/json'}
+    return json.dumps({"error": "Escalation not found or already resolved"}), 404, {'Content-Type': 'application/json'}
+
 @app.route('/debug/ingest', methods=['GET', 'POST'])
 def debug_ingest():
     """Manual trigger for knowledge ingestion (Librarian)"""
@@ -780,15 +959,16 @@ def handle_profile():
     
     # Default to the first user found (Single user mode assumption)
     target_user_id = request.args.get('user_id', users[0]['user_id'])
-    
+    profile_client_id = request.args.get('client_id', 'default')
+
     if request.method == 'GET':
-        profile = get_user_profile(target_user_id)
+        profile = get_user_profile(target_user_id, client_id=profile_client_id)
         return json.dumps(profile, ensure_ascii=False), 200, {'Content-Type': 'application/json'}
-        
+
     elif request.method == 'POST':
         try:
             new_profile = request.json
-            if save_user_profile(target_user_id, new_profile):
+            if save_user_profile(target_user_id, new_profile, client_id=profile_client_id):
                 return json.dumps({"success": True, "profile": new_profile}), 200, {'Content-Type': 'application/json'}
             else:
                 return json.dumps({"error": "Failed to save profile"}), 500, {'Content-Type': 'application/json'}

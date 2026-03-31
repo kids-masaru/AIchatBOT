@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile core/prompts.py)",
+      "Read(//c/Users/HP/Downloads/**)",
+      "Bash(mkdir -p drive-download-extracted)",
+      "Bash(unzip -o \"drive-download-20260331T205747Z-1-001.zip\" -d drive-download-extracted/)",
+      "Bash(python -m py_compile utils/vector_store.py core/agent.py core/profiler.py core/historian.py app.py)",
+      "Bash(python -m py_compile core/agent.py core/communicator.py)",
+      "Bash(python -m py_compile utils/escalation.py core/agent.py app.py)",
+      "Bash(python -m py_compile utils/escalation.py utils/inquiry_log.py utils/feedback.py utils/meeting_minutes.py core/agent.py app.py)"
+    ]
+  }
+}

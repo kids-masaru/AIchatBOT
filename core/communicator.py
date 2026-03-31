@@ -99,7 +99,7 @@ class CommunicatorAgent:
 
         except Exception as e:
             print(f"Communicator(Ren) Execution Error: {e}", file=sys.stderr)
-            return f"レンです。申し訳ありません、文章作成中にエラーが発生しました: {str(e)}"
+            return "申し訳ありません、うまく処理できませんでした。しばらくしてから再度お試しください。"
 
 # Singleton
 communicator = CommunicatorAgent()

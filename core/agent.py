@@ -278,6 +278,8 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, 
     if not GEMINI_API_KEY:
         return "エラー: GEMINI_API_KEYが設定されていません。"
 
+    client_id = client_config.get('client_id', 'default') if client_config else 'default'
+
     from utils.vector_store import save_conversation, get_user_profile, get_context_summary
     from utils.agent_log import is_debug_mode, set_debug_mode, add_log, format_log_for_line
 
@@ -294,12 +296,12 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, 
         # 1. Build System Prompt & History
         # IMPORTANT: Load context summary BEFORE adding current message to history/vector store
         # to avoid self-referencing mirroring bugs.
-        memory_text = get_context_summary(user_id, user_message)
-        
+        memory_text = get_context_summary(user_id, user_message, client_id=client_id)
+
         # Now safe to add to temporary history for the current request
         add_message(user_id, "user", user_message)
         # Fix RAG: Store user message into Pinecone as well to enable bidirectional memory retrieval
-        save_conversation(user_id, "user", user_message)
+        save_conversation(user_id, "user", user_message, client_id=client_id)
         
         history_data = get_user_history(user_id)
         
@@ -313,7 +315,7 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, 
         jst = datetime.timezone(datetime.timedelta(hours=9))
         now_str = datetime.datetime.now(jst).strftime('%Y-%m-%d %H:%M:%S (%A)')
         
-        user_data = get_user_profile(user_id)
+        user_data = get_user_profile(user_id, client_id=client_id)
         # Safety: Profiler may rarely save a list instead of dict
         if not isinstance(user_data, dict):
             user_data = {}
@@ -479,7 +481,23 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, 
         
         if final_text:
             add_message(user_id, "model", final_text)
-            save_conversation(user_id, "model", final_text)
+            save_conversation(user_id, "model", final_text, client_id=client_id)
+
+            # T19: エスカレーション検知 — 「井崎に直接ご確認ください」を含む場合に通知
+            from utils.escalation import should_escalate, save_and_notify
+            if should_escalate(final_text):
+                save_and_notify(client_id, user_id, user_message, final_text)
+
+            # T20: 問い合わせ記録
+            from utils.inquiry_log import log_inquiry
+            log_inquiry(client_id, user_id, user_message, final_text)
+
+            # T21: フィードバック記録（100文字超の実質的な回答のみ）
+            # 通知は毎回ではなく管理画面 or 日次ダイジェストで確認する方式
+            if len(final_text) > 100 and not should_escalate(final_text):
+                from utils.feedback import save_response_for_feedback
+                save_response_for_feedback(client_id, user_id, user_message, final_text)
+
             return final_text
         
         return "申し訳ありません、うまく応答を生成できませんでした。"
@@ -488,4 +506,4 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, 
         print(f"Gemini API Error: {e}", file=sys.stderr)
         import traceback
         traceback.print_exc(file=sys.stderr)
-        return f"エラーが発生しました: {e}"
+        return "ただいま混み合っております。しばらくしてから再度お試しください。"
