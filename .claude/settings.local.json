@@ -8,7 +8,8 @@
       "Bash(python -m py_compile utils/vector_store.py core/agent.py core/profiler.py core/historian.py app.py)",
       "Bash(python -m py_compile core/agent.py core/communicator.py)",
       "Bash(python -m py_compile utils/escalation.py core/agent.py app.py)",
-      "Bash(python -m py_compile utils/escalation.py utils/inquiry_log.py utils/feedback.py utils/meeting_minutes.py core/agent.py app.py)"
+      "Bash(python -m py_compile utils/escalation.py utils/inquiry_log.py utils/feedback.py utils/meeting_minutes.py core/agent.py app.py)",
+      "Bash(gh pr:*)"
     ]
   }
 }
