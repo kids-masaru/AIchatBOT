@@ -9,9 +9,9 @@ from googleapiclient.discovery import build
 from utils.auth import get_google_credentials, get_shared_folder_id
 
 # Template folder name in Drive
-TEMPLATE_FOLDER_NAME = "KOTO_TEMPLATES"
+TEMPLATE_FOLDER_NAME = "MORA_TEMPLATES"
 # Registry sheet name
-TEMPLATE_REGISTRY_NAME = "KOTO_TEMPLATE_REGISTRY"
+TEMPLATE_REGISTRY_NAME = "MORA_TEMPLATE_REGISTRY"
 
 
 def get_or_create_template_folder() -> dict:

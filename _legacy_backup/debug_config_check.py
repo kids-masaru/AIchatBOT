@@ -15,7 +15,7 @@ def check_clean():
     
     # Check Target Folder
     if folder_id:
-        q = f"name = 'KOTO_CONFIG' and '{folder_id}' in parents and trashed = false"
+        q = f"name = 'MORA_CONFIG' and '{folder_id}' in parents and trashed = false"
         res = drive.files().list(
             q=q, 
             fields="files(id, name)",

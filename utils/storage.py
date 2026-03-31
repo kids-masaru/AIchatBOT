@@ -91,7 +91,7 @@ def save_all_history():
 
 
 def backup_history_to_drive():
-    """Sync history to Google Drive (koto_history_backup.json)"""
+    """Sync history to Google Drive (mora_history_backup.json)"""
     global _history_cache
     if _history_cache is None: 
         return
@@ -109,7 +109,7 @@ def backup_history_to_drive():
         json_str = json.dumps(dict(_history_cache), ensure_ascii=False, indent=2)
         
         # Check for existing
-        res = search_drive("koto_history_backup.json")
+        res = search_drive("mora_history_backup.json")
         files = res.get("files", [])
         file_id = None
         if files:
@@ -133,7 +133,7 @@ def backup_history_to_drive():
             print(f"Backup updated: {file_id}", file=sys.stderr)
         else:
             # Create new
-            res = upload_file_to_drive("koto_history_backup.json", json_str.encode('utf-8'), mime_type='application/json')
+            res = upload_file_to_drive("mora_history_backup.json", json_str.encode('utf-8'), mime_type='application/json')
             print(f"Backup created: {res}", file=sys.stderr)
             
     except Exception as e:
@@ -146,7 +146,7 @@ def _restore_from_drive():
     print("Attempting to restore history from Drive...", file=sys.stderr)
     try:
         from tools.google_ops import search_drive, read_drive_file
-        res = search_drive("koto_history_backup.json")
+        res = search_drive("mora_history_backup.json")
         files = res.get("files", [])
         if files:
             file_id = files[0]['id']

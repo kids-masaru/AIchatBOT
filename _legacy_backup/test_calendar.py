@@ -22,7 +22,7 @@ def test_calendar():
     tomorrow = (datetime.datetime.utcnow() + datetime.timedelta(days=1)).isoformat()
     try:
         create_result = create_calendar_event(
-            summary="Koto AI Test Event",
+            summary="Mora AI Test Event",
             start_time=tomorrow,
             location="Virtual"
         )

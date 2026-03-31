@@ -37,7 +37,7 @@ def test_update_instruction():
 
 def test_load_skill():
     print("\n--- Testing load_skill ---")
-    # This requires a 'KOTO_SKILLS' folder and a file in Drive
+    # This requires a 'MORA_SKILLS' folder and a file in Drive
     # We can at least test the folder creation/retrieval part
     res = load_skill("non_existent_skill_test_12345")
     print(f"Load Skill Result (expected fail): {res}")

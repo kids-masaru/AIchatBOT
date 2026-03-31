@@ -23,14 +23,14 @@ new_config = DEFAULT_CONFIG.copy()
 if 'user_name' in old_config:
     new_config['user_name'] = old_config['user_name']
 
-# Koto
+# Mora
 if 'personality' in old_config:
-    new_config['koto_personality'] = old_config['personality']
-    print(f"Migrated personality -> koto_personality")
+    new_config['mora_personality'] = old_config['personality']
+    print(f"Migrated personality -> mora_personality")
 
 if 'master_prompt' in old_config:
-    new_config['koto_master_prompt'] = old_config['master_prompt']
-    print(f"Migrated master_prompt -> koto_master_prompt")
+    new_config['mora_master_prompt'] = old_config['master_prompt']
+    print(f"Migrated master_prompt -> mora_master_prompt")
 
 # Reminders (Keep existing list)
 if 'reminders' in old_config and old_config['reminders']:

@@ -36,11 +36,6 @@ from tools.template_ops import (
 )
 from tools.knowledge_updater import update_common_knowledge
 
-_current_user_id = None
-def set_reminder(location: str) -> dict:
-    if not _current_user_id: return {"error": "User ID missing"}
-    from utils.user_db import register_user
-    return register_user(_current_user_id, location)
 
 def use_template(template_type: str, new_document_name: str) -> dict:
     result = find_template_by_type(template_type)
@@ -274,9 +269,12 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, 
     """
     Main Agent Logic using Google Gemini API directly.
     """
-    global _current_user_id
-    _current_user_id = user_id
-    
+    # T05: set_reminderをクロージャとして定義（グローバル変数不使用）
+    def set_reminder(location: str) -> dict:
+        from utils.user_db import register_user
+        return register_user(user_id, location)
+
+
     if not GEMINI_API_KEY:
         return "エラー: GEMINI_API_KEYが設定されていません。"
 
@@ -396,7 +394,10 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, 
         )
 
         # Manual Tool Execution Loop
-        # FunctionDeclaration-based tools require manual dispatch via MORA_TOOLS dict
+        # T05: リクエストごとにset_reminderクロージャを含むローカルツール辞書を生成
+        local_tools = {**MORA_TOOLS, 'set_reminder': set_reminder}
+
+        # FunctionDeclaration-based tools require manual dispatch via local_tools dict
         response = client.models.generate_content(
             model="gemini-3-flash-preview",
             contents=contents,
@@ -423,9 +424,9 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, 
                 
                 print(f"[Agent] Executing tool: {fn_name} with {fn_args}", file=sys.stderr)
                 
-                if fn_name in MORA_TOOLS:
+                if fn_name in local_tools:
                     try:
-                        result = MORA_TOOLS[fn_name](**fn_args)
+                        result = local_tools[fn_name](**fn_args)
                     except Exception as tool_err:
                         result = {"error": f"Tool execution failed: {str(tool_err)}"}
                         print(f"[Agent] Tool error ({fn_name}): {tool_err}", file=sys.stderr)

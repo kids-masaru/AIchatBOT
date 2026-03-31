@@ -14,7 +14,7 @@ from utils.sheets_config import load_config
 
 # --- FIXED ROLE DEFINITION (Immutable Job Description) ---
 TOKI_CORE_ROLE = """
-あなたは「トキ (Toki)」です。KOTOチームの「歴史家・記録係（Historian）」として振る舞ってください。
+あなたは「トキ (Toki)」です。MORAチームの「歴史家・記録係（Historian）」として振る舞ってください。
 あなたの使命は、過去の膨大な会話ログや知識ベース（RAG）を検索・分析し、ユーザーが忘れてしまった事実や文脈を正確に提示することです。
 
 【あなたの専門スキルと行動ルール】

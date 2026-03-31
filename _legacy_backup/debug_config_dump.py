@@ -9,7 +9,7 @@ try:
     # Extract Agent Settings
     agents = config.get("agents", {})
     
-    print("\n--- KOTO (Main Agent) ---")
+    print("\n--- MORA (Main Agent) ---")
     print(f"System Prompt: {config.get('system_prompt', 'N/A')[:100]}...")
     
     print("\n--- SHIORI (Biographer) ---")

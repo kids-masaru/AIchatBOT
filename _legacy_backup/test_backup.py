@@ -19,7 +19,7 @@ try:
     
     # Check if file exists
     from tools.google_ops import search_drive
-    res = search_drive("koto_history_backup.json")
+    res = search_drive("mora_history_backup.json")
     if res.get("files"):
         print(f"SUCCESS: Found backup file: {res['files'][0]['name']}")
     else:

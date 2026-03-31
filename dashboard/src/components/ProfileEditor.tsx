@@ -35,7 +35,7 @@ export const ProfileEditor: React.FC = () => {
                     interests: [],
                     values: [],
                     current_goals: [],
-                    summary: 'まだ分析データがありません。KOTOと会話すると自動生成されます。'
+                    summary: 'まだ分析データがありません。MORAと会話すると自動生成されます。'
                 });
             } else {
                 setProfile(data);

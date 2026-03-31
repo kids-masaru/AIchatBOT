@@ -142,30 +142,4 @@ TOOLS = [
             "required": ["skill_name", "instructions"]
         }
     },
-    {
-        "name": "search_notion",
-        "description": "Notionのデータベースを検索して情報を取得します。Google Driveに情報がない場合、こちらを知識源として参照してください。",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "（オプション）検索キーワード。"},
-                "database_id": {"type": "string", "description": "（オプション）対象のデータベースID。"}
-            }
-        }
-    },
-    {
-        "name": "add_notion_task",
-        "description": "Notionのデータベースに新しいタスクや情報を追加します。",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "title": {"type": "string", "description": "タイトル（項目名）"},
-                "content": {"type": "string", "description": "（オプション）詳細説明や内容"},
-                "due_date": {"type": "string", "description": "（オプション）期日 (YYYY-MM-DD)"},
-                "status": {"type": "string", "description": "（オプション）ステータス名"},
-                "database_id": {"type": "string", "description": "（オプション）対象のデータベースID。"}
-            },
-            "required": ["title"]
-        }
-    },
 ]

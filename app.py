@@ -231,7 +231,7 @@ LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN', '')
 def verify_signature(body, signature, channel_secret):
     """Verify LINE webhook signature"""
     if not channel_secret:
-        return True
+        return False  # T02: secretが未設定のリクエストは拒否
     hash_value = hmac.new(
         channel_secret.encode('utf-8'),
         body.encode('utf-8'),
@@ -557,7 +557,7 @@ def process_batched_messages(user_id, tasks, client_config):
         if not combined_text: return
 
         # Call AI
-        ai_response = get_gemini_response(user_id, combined_text.strip())
+        ai_response = get_gemini_response(user_id, combined_text.strip(), client_config=client_config)
         
         # Reply
         if reply_tokens:

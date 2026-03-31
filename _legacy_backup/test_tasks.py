@@ -26,7 +26,7 @@ def test_tasks():
 
     # 2. Test Adding Task
     print("\n[2] Adding Test Task...")
-    add_result = add_task("Test Task from Koto Debugger")
+    add_result = add_task("Test Task from Mora Debugger")
     if "error" in add_result:
         print(f"❌ Failed to add task: {add_result['error']}")
     else:

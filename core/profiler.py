@@ -1,5 +1,5 @@
 """
-Koto Profiler (Gemini Version)
+Mora Profiler (Gemini Version)
 Analyzes conversation history to update user profiles (psychological/preference models).
 """
 import os

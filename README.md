@@ -1,4 +1,4 @@
-# Koto - AI Secretary for LINE
+# Mora - AI Secretary for LINE
 
 Python-based AI secretary that integrates with LINE.
 Powered by Gemini 3.0 Flash.

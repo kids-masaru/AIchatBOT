@@ -8,7 +8,7 @@ from googleapiclient.discovery import build
 from utils.auth import get_google_credentials, get_shared_folder_id
 from tools.google_ops import create_google_sheet, search_drive
 
-DB_FILENAME = "Koto_Users"
+DB_FILENAME = "Mora_Users"
 
 def _get_or_create_db():
     """Find existing DB sheet or create new one"""

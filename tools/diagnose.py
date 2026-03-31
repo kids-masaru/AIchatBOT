@@ -1,5 +1,5 @@
 """
-Diagnostic script for Koto AI Secretary
+Diagnostic script for Mora AI Secretary
 Checks environment variables and API connectivity
 """
 import os
@@ -126,7 +126,7 @@ def check_gemini_access():
         return False
 
 if __name__ == "__main__":
-    print("Starting Koto Diagnostics...\n")
+    print("Starting Mora Diagnostics...\n")
     check_env_vars()
     check_google_auth()
     check_drive_access()

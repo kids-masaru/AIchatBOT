@@ -1,5 +1,5 @@
 """
-Notion API integration for KOTO
+Notion API integration for MORA
 Provides tools to read and write to Notion databases
 """
 import os

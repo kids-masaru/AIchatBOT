@@ -42,8 +42,8 @@ MAX_HISTORY = 50  # 50件に変更
 # Temporary storage for PDFs sent by users
 user_pdf_cache = {}
 
-# Koto's personality
-SYSTEM_PROMPT = """あなたは「コト」という名前の秘書です。
+# Mora's personality
+SYSTEM_PROMPT = """あなたは「モラ」という名前の秘書です。
 
 【性格】
 - 20代後半の女性
@@ -704,7 +704,7 @@ def reply_message(reply_token, text):
 
 @app.route('/', methods=['GET'])
 def health_check():
-    return 'Koto AI Secretary is running!', 200
+    return 'Mora AI Secretary is running!', 200
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -737,7 +737,7 @@ def webhook():
                 
                 ai_response = get_gemini_response(user_id, user_text)
                 
-                print(f"Koto: {ai_response[:100]}...", file=sys.stderr)
+                print(f"Mora: {ai_response[:100]}...", file=sys.stderr)
                 
                 if reply_token:
                     reply_message(reply_token, ai_response)
@@ -746,7 +746,7 @@ def webhook():
             reply_token = event.get('replyToken')
             conversation_history[user_id] = []
             if reply_token:
-                reply_message(reply_token, "あ、こんにちは！コトです😊\n\n色々お手伝いできますよ〜！\n・ドキュメント作成\n・メール確認\n・計算\n・PDF読み取り\n\n気軽に言ってくださいね！")
+                reply_message(reply_token, "あ、こんにちは！モラです😊\n\n色々お手伝いできますよ〜！\n・ドキュメント作成\n・メール確認\n・計算\n・PDF読み取り\n\n気軽に言ってくださいね！")
     
     return 'OK', 200
 

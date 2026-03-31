@@ -9,7 +9,7 @@ load_dotenv()
 from core.agent import get_gemini_response
 
 def main():
-    print("=== Koto Local Debug Client ===")
+    print("=== Mora Local Debug Client ===")
     print("Type 'exit' to quit.")
 
     # Initialize user_id
@@ -21,12 +21,12 @@ def main():
             if user_input.lower() in ['exit', 'quit']:
                 break
                 
-            print("Koto thinking...", end="", flush=True)
+            print("Mora thinking...", end="", flush=True)
             
             # get_gemini_response is synchronous
             response = get_gemini_response(user_id, user_input)
             
-            print(f"\rKoto: {response}")
+            print(f"\rMora: {response}")
             
         except Exception as e:
             print(f"\nError: {e}")

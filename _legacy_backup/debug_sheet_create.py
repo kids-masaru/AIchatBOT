@@ -17,7 +17,7 @@ try:
     drive_service = build('drive', 'v3', credentials=creds)
     
     # 1. Search
-    query = "name = 'KOTO_CONFIG' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false"
+    query = "name = 'MORA_CONFIG' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false"
     if folder_id:
         query += f" and '{folder_id}' in parents"
     
@@ -32,7 +32,7 @@ try:
     if not files:
         print("Creating new sheet...")
         file_metadata = {
-            'name': 'KOTO_CONFIG',
+            'name': 'MORA_CONFIG',
             'mimeType': 'application/vnd.google-apps.spreadsheet'
         }
         if folder_id:

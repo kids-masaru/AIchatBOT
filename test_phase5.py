@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Add koto dir to path
+# Add mora dir to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from core.scheduler import SchedulerAgent
@@ -16,12 +16,12 @@ def test_rina():
     print("\n--- Testing Rina (Scheduler) ---")
     rina = SchedulerAgent()
     
-    req1 = "明日の15時から16時に『Koto連携テスト』という予定を追加して。"
+    req1 = "明日の15時から16時に『Mora連携テスト』という予定を追加して。"
     print(f"User: {req1}")
     res1 = rina.run(user_request=req1)
     print(f"Rina: {res1}\n")
     
-    req2 = "さっき追加した『Koto連携テスト』という予定を削除して。"
+    req2 = "さっき追加した『Mora連携テスト』という予定を削除して。"
     print(f"User: {req2}")
     res2 = rina.run(user_request=req2)
     print(f"Rina: {res2}\n")
@@ -39,12 +39,12 @@ def test_fumi():
     print("\n--- Testing Fumi (Maker) ---")
     fumi = MakerAgent()
     
-    req1 = "Google Keepに「Koto連携テストメモ」というタイトルで「初期テスト」とメモして。"
+    req1 = "Google Keepに「Mora連携テストメモ」というタイトルで「初期テスト」とメモして。"
     print(f"User: {req1}")
     res1 = fumi.run(user_request=req1)
     print(f"Fumi: {res1}\n")
     
-    req2 = "先ほどの「Koto連携テストメモ」に「追記テスト成功！」という文章を追記して。"
+    req2 = "先ほどの「Mora連携テストメモ」に「追記テスト成功！」という文章を追記して。"
     print(f"User: {req2}")
     res2 = fumi.run(user_request=req2)
     print(f"Fumi: {res2}\n")

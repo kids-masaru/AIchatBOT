@@ -65,7 +65,7 @@ class ClientRegistry:
                 "line_channel_access_token": os.environ.get("LINE_CHANNEL_ACCESS_TOKEN"),
                 "spreadsheet_id": os.environ.get("SPREADSHEET_ID"),
                 "knowledge_folder_id": os.environ.get("GOOGLE_DRIVE_FOLDER_ID"),
-                "bot_name": "Koto",
+                "bot_name": "Mora",
                 "personality": "Helpful Office Assistant"
             }
         }

@@ -27,14 +27,14 @@ def run_test(name, prompt):
         # Measure time
         start_time = time.time()
         
-        # Call Koto (Router)
+        # Call Mora (Router)
         # Note: get_gemini_response might print to stdout/stderr, verifying that is harder.
         # But we capture the return value which is the most important part.
         response = get_gemini_response(TEST_USER_ID, prompt)
         
         elapsed = time.time() - start_time
         
-        log(f"\n[Koto Response] ({elapsed:.2f}s):")
+        log(f"\n[Mora Response] ({elapsed:.2f}s):")
         log(response)
         log("-" * 60)
         
@@ -46,21 +46,21 @@ if __name__ == "__main__":
     with open("verification_result.txt", "w", encoding="utf-8") as f:
         f.write("Starting Verification Run...\n")
         
-    log("Starting Koto Multi-Agent Verification...")
+    log("Starting Mora Multi-Agent Verification...")
     
     # 1. Test Fumi (Creation)
-    run_test("Fumi (Creator)", "「Kotoシステム稼働テスト」というタイトルのGoogleドキュメントを作成して。「動作確認済み」とだけ書いておいて。")
+    run_test("Fumi (Creator)", "「Moraシステム稼働テスト」というタイトルのGoogleドキュメントを作成して。「動作確認済み」とだけ書いておいて。")
     
     # Wait a bit
     time.sleep(2)
 
     # 2. Test Aki (Organization)
-    run_test("Aki (Librarian)", "さっき作った「Kotoシステム稼働テスト」というファイルを、「テスト結果_Temp」というフォルダを作ってそこに移動して。")
+    run_test("Aki (Librarian)", "さっき作った「Moraシステム稼働テスト」というファイルを、「テスト結果_Temp」というフォルダを作ってそこに移動して。")
 
     time.sleep(2)
 
     # 3. Test Rina (Scheduler)
-    run_test("Rina (Scheduler)", "2027年1月1日の朝10時に「Koto動作テスト」という予定を入れて。")
+    run_test("Rina (Scheduler)", "2027年1月1日の朝10時に「Mora動作テスト」という予定を入れて。")
     
     time.sleep(2)
 
