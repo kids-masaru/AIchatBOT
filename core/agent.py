@@ -224,7 +224,6 @@ MORA_TOOLS = {
     'complete_notion_task': lambda page_id, new_status: update_notion_task(page_id, new_status, None),
     'toggle_notion_checkbox': lambda page_id, property_name, checked: toggle_notion_checkbox(page_id, property_name, checked),
     'update_notion_properties': lambda page_id, properties: update_notion_task_properties(page_id, properties),
-    'set_reminder': set_reminder,
     'list_available_templates': list_templates,
     'check_new_templates': check_unregistered_templates,
     'find_template': find_template_by_type,
