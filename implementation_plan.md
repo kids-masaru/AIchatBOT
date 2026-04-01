@@ -10,7 +10,7 @@ Resolve critical issues identified in production logs:
 
 ### 1. Fix Schedule Date Mismatch (Timezone)
 
-#### [MODIFY] [app.py](file:///c:/Users/HP/OneDrive/ドキュメント/mottora/koto/app.py)
+#### [MODIFY] [app.py](file:///c:/Users/HP/OneDrive/ドキュメント/mottora/AIchatBOT/app.py)
 - Update `process_user_reminders`:
     - Define `JST` explicitly.
     - Calculate `now` in JST.
@@ -20,7 +20,7 @@ Resolve critical issues identified in production logs:
 
 ### 2. Implement Duplicate Prevention
 
-#### [MODIFY] [app.py](file:///c:/Users/HP/OneDrive/ドキュメント/mottora/koto/app.py)
+#### [MODIFY] [app.py](file:///c:/Users/HP/OneDrive/ドキュメント/mottora/AIchatBOT/app.py)
 - Introduce a simple in-memory tracking or Sheet-based tracking for "last sent date".
 - Given the single-worker environment appropriate for `BackgroundScheduler`, in-memory tracking (global dict) is the simplest and fastest solution for now.
     - `last_reminder_sent = {'user_id': '2026-01-16'}`
@@ -28,11 +28,11 @@ Resolve critical issues identified in production logs:
 
 ### 3. Fix Profiler Error
 
-#### [MODIFY] [utils/vector_store.py](file:///c:/Users/HP/OneDrive/ドキュメント/mottora/koto/utils/vector_store.py)
+#### [MODIFY] [utils/vector_store.py](file:///c:/Users/HP/OneDrive/ドキュメント/mottora/AIchatBOT/utils/vector_store.py)
 - Update `save_user_profile`:
     - Change `dummy_vector` from all zeros to `[0.1] * DIMENSION`.
 
-#### [MODIFY] [core/profiler.py](file:///c:/Users/HP/OneDrive/ドキュメント/mottora/koto/core/profiler.py)
+#### [MODIFY] [core/profiler.py](file:///c:/Users/HP/OneDrive/ドキュメント/mottora/AIchatBOT/core/profiler.py)
 - Update `_analyze_and_merge`:
     - Improve JSON extraction logic (handle cases where Gemini returns text before/after JSON code block).
 

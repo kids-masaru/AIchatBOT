@@ -1,6 +1,6 @@
 # Google Workspace機能（ドライブ・Gmail）のセットアップ
 
-KotoがGoogleドライブやGmailにアクセスするには、権限の設定が必要です。
+MoraがGoogleドライブやGmailにアクセスするには、権限の設定が必要です。
 あなたは「Google Workspaceの管理者」ですので、**方法B（ドメイン全体の委任）** が最も便利で強力です。
 
 ---

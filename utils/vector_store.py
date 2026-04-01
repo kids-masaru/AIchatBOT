@@ -12,7 +12,7 @@ from pinecone import Pinecone, ServerlessSpec
 # Config
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
 PINECONE_ENV = "us-east-1" 
-INDEX_NAME = "koto-memory-v2"
+INDEX_NAME = "mora-memory-v2"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 class GeminiEmbedder:
@@ -76,19 +76,26 @@ def _get_index():
         print(f"Pinecone init error: {e}", file=sys.stderr)
         return None
 
-def save_conversation(user_id: str, role: str, text: str, metadata: Optional[Dict] = None) -> bool:
+def _scoped_user_id(client_id: str, user_id: str) -> str:
+    """Build a client-scoped user ID to prevent cross-tenant data leakage."""
+    return f"{client_id}_{user_id}"
+
+
+def save_conversation(user_id: str, role: str, text: str, metadata: Optional[Dict] = None, client_id: str = "default") -> bool:
     index = _get_index()
     if index is None: return False
-    
+
     try:
         embedder = GeminiEmbedder()
         vector = embedder.embed_text(text)
-        
+
+        scoped_id = _scoped_user_id(client_id, user_id)
         timestamp = datetime.now().timestamp()
-        msg_id = f"{user_id}_{int(timestamp)}_{hash(text)}"
-        
+        msg_id = f"{scoped_id}_{int(timestamp)}_{hash(text)}"
+
         meta = {
-            "user_id": user_id,
+            "user_id": scoped_id,
+            "client_id": client_id,
             "role": role,
             "text": text,
             "timestamp": timestamp,
@@ -96,76 +103,72 @@ def save_conversation(user_id: str, role: str, text: str, metadata: Optional[Dic
         }
         if metadata:
             meta.update(metadata)
-            
+
         index.upsert(vectors=[(msg_id, vector, meta)])
         return True
     except Exception as e:
         print(f"Save conversation error: {e}", file=sys.stderr)
         return False
 
-def search_similar_conversations(user_id: str, query_text: str, top_k: int = 5) -> List[Dict]:
+def search_similar_conversations(user_id: str, query_text: str, top_k: int = 5, client_id: str = "default") -> List[Dict]:
     index = _get_index()
     if index is None: return []
-    
+
     try:
         embedder = GeminiEmbedder()
         vector = embedder.embed_text(query_text)
-        
+
+        scoped_id = _scoped_user_id(client_id, user_id)
         result = index.query(
             vector=vector,
             top_k=top_k,
-            filter={"user_id": user_id, "type": "conversation"},
+            filter={"user_id": scoped_id, "type": "conversation"},
             include_metadata=True
         )
-        
+
         matches = []
         for match in result['matches']:
             matches.append(match['metadata'])
-            
+
         return matches
     except Exception as e:
         print(f"Search error: {e}", file=sys.stderr)
         return []
 
-def save_user_profile(user_id: str, profile_data: Dict) -> bool:
-    # Save as special document in Pinecone or separate DB?
-    # For now, let's assume it's stored in a separate namespace or just distinct ID
-    # But Pinecone overwrites by ID.
+def save_user_profile(user_id: str, profile_data: Dict, client_id: str = "default") -> bool:
     index = _get_index()
     if index is None: return False
-    
+
     try:
-        # Profile doesn't technically need embedding if we only fetch by ID,
-        # but we might want to search profiles? 
-        # For Koto, we usually just GET profile by ID.
-        # Let's use simple dummy vector or embed the summary.
-        
         profile_text = json.dumps(profile_data, ensure_ascii=False)
         embedder = GeminiEmbedder()
-        vector = embedder.embed_text(profile_text[:1000]) # Embed summary
-        
-        doc_id = f"profile_{user_id}"
+        vector = embedder.embed_text(profile_text[:1000])
+
+        scoped_id = _scoped_user_id(client_id, user_id)
+        doc_id = f"profile_{scoped_id}"
         meta = {
-            "user_id": user_id,
+            "user_id": scoped_id,
+            "client_id": client_id,
             "type": "profile",
             "profile_json": profile_text,
             "updated_at": datetime.now().timestamp()
         }
-        
+
         index.upsert(vectors=[(doc_id, vector, meta)])
         return True
     except Exception as e:
         print(f"Save profile error: {e}", file=sys.stderr)
         return False
 
-def get_user_profile(user_id: str) -> Dict:
+def get_user_profile(user_id: str, client_id: str = "default") -> Dict:
     index = _get_index()
     if index is None: return {}
-    
+
     try:
-        doc_id = f"profile_{user_id}"
+        scoped_id = _scoped_user_id(client_id, user_id)
+        doc_id = f"profile_{scoped_id}"
         result = index.fetch(ids=[doc_id])
-        
+
         if doc_id in result['vectors']:
             json_str = result['vectors'][doc_id]['metadata']['profile_json']
             return json.loads(json_str)
@@ -173,35 +176,31 @@ def get_user_profile(user_id: str) -> Dict:
     except Exception as e:
         print(f"Get profile error: {e}", file=sys.stderr)
         return {}
-    
-def get_context_summary(user_id: str, query: str) -> str:
+
+def get_context_summary(user_id: str, query: str, client_id: str = "default") -> str:
     """Get summarized context from RAG"""
-    matches = search_similar_conversations(user_id, query)
+    matches = search_similar_conversations(user_id, query, client_id=client_id)
     if not matches:
         return ""
-        
+
     summary = "【過去の関連会話】\n"
     for m in matches:
-        role = "ユーザー" if m['role'] == 'user' else "コト"
+        role = "ユーザー" if m['role'] == 'user' else "モラ"
         summary += f"- {role}: {m['text']}\n"
     return summary
 
-def search_knowledge_base(query: str, n_results: int = 5) -> List[Dict]:
-    """
-    Search-friendly wrapper for sub-agents. 
-    Uses the global _current_user_id from core.agent if available.
-    """
-    from core.agent import _current_user_id
-    if not _current_user_id:
-        print("Warning: search_knowledge_base called without _current_user_id", file=sys.stderr)
+def search_knowledge_base(query: str, n_results: int = 5, user_id: str = "", client_id: str = "default") -> List[Dict]:
+    """Search-friendly wrapper for sub-agents."""
+    if not user_id:
+        print("Warning: search_knowledge_base called without user_id", file=sys.stderr)
         return []
-    return search_similar_conversations(_current_user_id, query, top_k=n_results)
+    return search_similar_conversations(user_id, query, top_k=n_results, client_id=client_id)
 
 def save_knowledge_vector(doc_id: str, text: str, metadata: Dict) -> bool:
     """Save knowledge text vector."""
     index = _get_index()
     if index is None: return False
-    
+
     try:
         embedder = GeminiEmbedder()
         vector = embedder.embed_text(text)

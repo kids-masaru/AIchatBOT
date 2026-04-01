@@ -7,7 +7,7 @@ import { AgentLogViewer } from './components/AgentLogViewer';
 
 // API Base URL
 // In development: use local backend
-// In production: use the deployed KOTO backend on Railway
+// In production: use the deployed MORA backend on Railway
 const API_BASE = import.meta.env.PROD
   ? 'https://web-production-25bb0.up.railway.app'
   : 'http://localhost:8080';
@@ -48,9 +48,9 @@ interface Config {
   user_name: string;
   user_birthday?: string;
 
-  // Koto
-  koto_personality: string;
-  koto_master_prompt: string;
+  // Mora
+  mora_personality: string;
+  mora_master_prompt: string;
 
   // Agents
   shiori_instruction: string;
@@ -189,8 +189,8 @@ function App() {
 
   const [config, setConfig] = useState<Config>({
     user_name: '',
-    koto_personality: '',
-    koto_master_prompt: '',
+    mora_personality: '',
+    mora_master_prompt: '',
     shiori_instruction: '',
     fumi_instruction: '',
     aki_instruction: '',
@@ -226,9 +226,9 @@ function App() {
       const data = res.data;
 
       // Backward compatibility mappings
-      // Map old 'personality' to 'koto_personality' if new one is missing
-      if (!data.koto_personality && data.personality) data.koto_personality = data.personality;
-      if (!data.koto_master_prompt && data.master_prompt) data.koto_master_prompt = data.master_prompt;
+      // Map old 'personality' to 'mora_personality' if new one is missing
+      if (!data.mora_personality && data.personality) data.mora_personality = data.personality;
+      if (!data.mora_master_prompt && data.master_prompt) data.mora_master_prompt = data.master_prompt;
 
       // Agent prompt mappings
       if (!data.shiori_instruction && data.profiler_prompt) data.shiori_instruction = data.profiler_prompt;
@@ -307,7 +307,7 @@ function App() {
             <Bot className="w-7 h-7 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-gray-900">KOTO CONFIG</h1>
+            <h1 className="text-2xl font-black tracking-tight text-gray-900">MORA CONFIG</h1>
             <p className="text-sm text-gray-500 font-medium">AI・ナレッジ管理コンソール</p>
           </div>
         </div>
@@ -326,8 +326,8 @@ function App() {
                 <input type="text" value={config.user_name} onChange={e => setConfig({ ...config, user_name: e.target.value })} className="w-full px-4 py-2.5 bg-gray-50 border border-transparent focus:bg-white focus:border-indigo-500 rounded-lg text-sm font-medium transition-all outline-none" placeholder="User Name" />
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">KOTO Personality</label>
-                <input type="text" value={config.koto_personality} onChange={e => setConfig({ ...config, koto_personality: e.target.value })} className="w-full px-4 py-2.5 bg-gray-50 border border-transparent focus:bg-white focus:border-indigo-500 rounded-lg text-sm font-medium transition-all outline-none" placeholder="AI Personality" />
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">MORA Personality</label>
+                <input type="text" value={config.mora_personality} onChange={e => setConfig({ ...config, mora_personality: e.target.value })} className="w-full px-4 py-2.5 bg-gray-50 border border-transparent focus:bg-white focus:border-indigo-500 rounded-lg text-sm font-medium transition-all outline-none" placeholder="AI Personality" />
               </div>
               <div className="md:col-span-2">
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-2">My Birthday (Horoscope)</label>

@@ -1,5 +1,5 @@
 """
-Koto Profiler (Gemini Version)
+Mora Profiler (Gemini Version)
 Analyzes conversation history to update user profiles (psychological/preference models).
 """
 import os
@@ -26,33 +26,33 @@ class ProfilerAgent:
             
         self.model_name = 'gemini-3-flash-preview'
         
-    def run_analysis(self, user_id: str, days_back: int = 1) -> Dict:
+    def run_analysis(self, user_id: str, days_back: int = 1, client_id: str = "default") -> Dict:
         """Analyze recent conversations and update profile"""
         if not self.client:
              print("Profiler Error: Client not initialized.", file=sys.stderr)
              return {}
 
         print(f"Profiler: Starting analysis for {user_id} using {self.model_name}...", file=sys.stderr)
-        
+
         # 1. Fetch recent conversations from Pinecone
-        recent_logs = self._fetch_recent_logs(user_id, days_back)
+        recent_logs = self._fetch_recent_logs(user_id, days_back, client_id=client_id)
         if not recent_logs:
             print("Profiler: No new logs to analyze.", file=sys.stderr)
-            return self._load_current_profile(user_id)
+            return self._load_current_profile(user_id, client_id=client_id)
 
         # 2. Load existing profile
-        current_profile = self._load_current_profile(user_id)
+        current_profile = self._load_current_profile(user_id, client_id=client_id)
         
         # 3. Generate analysis prompting
         updated_profile = self._analyze_and_merge(current_profile, recent_logs)
         
         # 4. Save updated profile
-        self._save_profile(user_id, updated_profile)
-        
+        self._save_profile(user_id, updated_profile, client_id=client_id)
+
         print("Profiler: Profile updated successfully.", file=sys.stderr)
         return updated_profile
 
-    def _fetch_recent_logs(self, user_id: str, days: int) -> List[str]:
+    def _fetch_recent_logs(self, user_id: str, days: int, client_id: str = "default") -> List[str]:
         """Fetch logs from local storage (Short-term memory approach)"""
         # The vector store approach is good for long-term recall, 
         # but for daily profiling, we want the raw recent conversation.
@@ -78,13 +78,13 @@ class ProfilerAgent:
             print(f"Profiler Log Fetch Error: {e}", file=sys.stderr)
             return []
 
-    def _load_current_profile(self, user_id: str) -> Dict:
+    def _load_current_profile(self, user_id: str, client_id: str = "default") -> Dict:
         from utils.vector_store import get_user_profile
-        return get_user_profile(user_id)
+        return get_user_profile(user_id, client_id=client_id)
 
-    def _save_profile(self, user_id: str, profile: Dict):
+    def _save_profile(self, user_id: str, profile: Dict, client_id: str = "default"):
         from utils.vector_store import save_user_profile
-        save_user_profile(user_id, profile)
+        save_user_profile(user_id, profile, client_id=client_id)
 
     def _analyze_and_merge(self, current_profile: Dict, logs: List[str]) -> Dict:
         """Ask Gemini to update the profile based on new logs"""

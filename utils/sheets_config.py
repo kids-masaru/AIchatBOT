@@ -1,5 +1,5 @@
 """
-Google Sheets-based configuration storage for KOTO
+Google Sheets-based configuration storage for MORA
 This replaces local file storage to enable cloud persistence.
 """
 import json
@@ -7,18 +7,30 @@ import sys
 from googleapiclient.discovery import build
 from utils.auth import get_google_credentials, get_shared_folder_id
 
-CONFIG_SHEET_NAME = "KOTO_CONFIG"
+CONFIG_SHEET_NAME = "MORA_CONFIG"
 
 DEFAULT_CONFIG = {
     # --- Global Settings ---
     "user_name": "井崎さん",
     "user_birthday": "1980-01-01",  # For horoscope/age context
 
-    # --- 1. KOTO (Secretary & Controller) ---
-    "koto_personality": "元気な秘書",
-    "koto_master_prompt": "",
-    "koto_tone": "Polite but friendly",
+    # --- 1. MORA (Secretary & Controller) ---
+    "mora_personality": "元気な秘書",
+    "mora_master_prompt": "",
+    "mora_tone": "Polite but friendly",
+}
 
+# --- AIchatBOT (Multi-tenant) Minimal Config ---
+AI_CHATBOT_DEFAULT_CONFIG = {
+    "user_name": "お客様",
+    "bot_name": "AIチャットボット",
+    "personality": "丁寧なAIアシスタント",
+    "knowledge_folder_id": "",
+    "common_knowledge_doc_id": "",
+    "notion_database_id": "",
+}
+
+DEFAULT_CONFIG.update({
     # --- 2. SHIORI (Profiler - The Biographer) ---
     "shiori_instruction": """
     あなたは「栞（しおり）」という名の、心優しい伝記作家です。
@@ -37,7 +49,7 @@ DEFAULT_CONFIG = {
 
     # --- 3. FUMI (Maker - The Writer) ---
     "fumi_instruction": """
-あなたは「フミ (Fumi)」です。KOTOチームの「資料作成担当（Creator）」として振る舞ってください。
+あなたは「フミ (Fumi)」です。MORAチームの「資料作成担当（Creator）」として振る舞ってください。
 あなたの使命は、ユーザーの依頼に基づき、高品質なドキュメント、スプレッドシート、プレゼンテーションを作成することです。
 
 【あなたの専門スキルと行動ルール】
@@ -65,7 +77,7 @@ DEFAULT_CONFIG = {
 
     # --- 4. AKI (Librarian - The Organizer) ---
     "aki_instruction": """
-あなたは「アキ (Aki)」です。KOTOチームの「司書・整理担当（Librarian）」として振る舞ってください。
+あなたは「アキ (Aki)」です。MORAチームの「司書・整理担当（Librarian）」として振る舞ってください。
 あなたの使命は、Google Drive等のストレージを整理整頓し、ユーザーが必要な情報を即座に見つけられるようにすることです。
 
 【あなたの専門スキルと行動ルール】
@@ -89,7 +101,7 @@ DEFAULT_CONFIG = {
 
     # --- 6. TOKI (History Expert - The Historian) ---
     "toki_instruction": """
-あなたは「トキ (Toki)」です。KOTOチームの「歴史・記録担当（Historian）」として振る舞ってください。
+あなたは「トキ (Toki)」です。MORAチームの「歴史・記録担当（Historian）」として振る舞ってください。
 あなたの使命は、過去の膨大な会話ログやナレッジベースから必要な情報を掘り起こし、文脈を正しく理解することです。
 
 【あなたの専門スキルと行動ルール】
@@ -102,7 +114,7 @@ DEFAULT_CONFIG = {
 
     # --- 7. REN (Comms Expert - The Communicator) ---
     "ren_instruction": """
-あなたは「レン (Ren)」です。KOTOチームの「広報・連絡担当（Communicator）」として振る舞ってください。
+あなたは「レン (Ren)」です。MORAチームの「広報・連絡担当（Communicator）」として振る舞ってください。
 あなたの使命は、メールの下書き、LINEなどのメッセージ作成、対外的なやり取りのトーン調整を行うことです。
 
 【あなたの専門スキルと行動ルール】
@@ -115,7 +127,7 @@ DEFAULT_CONFIG = {
 
     # --- 8. NONO (Innovator - Notion & Knowledge) ---
     "nono_instruction": """
-あなたは「のの (Nono)」です。KOTOチームの「Notion & 知識管理担当（Innovator）」として振る舞ってください。
+あなたは「のの (Nono)」です。MORAチームの「Notion & 知識管理担当（Innovator）」として振る舞ってください。
 あなたの使命は、Notionの操作（タスク管理）と、新しいスキルの保存・管理を行うことです。
 
 【あなたの専門スキルと行動ルール】
@@ -151,7 +163,7 @@ DEFAULT_CONFIG = {
         }
     ],
     "skills_folder_id": ""
-}
+})
 
 _config_sheet_ids = {}  # Cache: client_name -> sheet_id
 _config_caches = {}     # Cache: sheet_id -> config_data
@@ -159,7 +171,7 @@ _config_cache_times = {} # Cache: sheet_id -> timestamp
 CACHE_TTL = 300          # Cache for 5 minutes
 
 def get_or_create_config_sheet(spreadsheet_id=None):
-    """Get or create the KOTO_CONFIG spreadsheet. If spreadsheet_id is provided, use it."""
+    """Get or create the MORA_CONFIG spreadsheet. If spreadsheet_id is provided, use it."""
     if spreadsheet_id:
         return spreadsheet_id
     
@@ -321,13 +333,13 @@ def save_config(config, spreadsheet_id=None):
 def update_agent_instruction(agent_name: str, new_instruction: str) -> dict:
     """
     Update a specific agent's instruction in the configuration.
-    agent_name can be 'koto', 'fumi', 'aki', 'rina', 'toki', 'ren', or 'nono'.
+    agent_name can be 'mora', 'fumi', 'aki', 'rina', 'toki', 'ren', or 'nono'.
     """
     try:
         config = load_config()
         key = f"{agent_name.lower()}_instruction"
-        if agent_name.lower() == "koto":
-             key = "koto_master_prompt" # Koto uses master_prompt as her main instruction
+        if agent_name.lower() == "mora":
+             key = "mora_master_prompt" # Mora uses master_prompt as her main instruction
              
         if key not in config:
             return {"error": f"エージェント '{agent_name}' の指示設定が見つかりません。"}

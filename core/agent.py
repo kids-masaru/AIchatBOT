@@ -1,5 +1,5 @@
 """
-Koto Agent - AI Logic (Gemini API Version)
+Mora Agent - AI Logic (Gemini API Version)
 Handles conversation with Google Gemini API and tool execution.
 """
 import os
@@ -36,11 +36,6 @@ from tools.template_ops import (
 )
 from tools.knowledge_updater import update_common_knowledge
 
-_current_user_id = None
-def set_reminder(location: str) -> dict:
-    if not _current_user_id: return {"error": "User ID missing"}
-    from utils.user_db import register_user
-    return register_user(_current_user_id, location)
 
 def use_template(template_type: str, new_document_name: str) -> dict:
     result = find_template_by_type(template_type)
@@ -94,7 +89,7 @@ def _resolve_notion_db_id(client_config=None, database_name=None):
 
 def load_skill(skill_name: str, client_config=None) -> dict:
     """
-    Find and load a skill (prompt) from the KOTO_SKILLS folder.
+    Find and load a skill (prompt) from the MORA_SKILLS folder.
     """
     from utils.sheets_config import load_config, save_config
     from tools.google_ops import search_drive, read_drive_file, create_drive_folder
@@ -104,16 +99,16 @@ def load_skill(skill_name: str, client_config=None) -> dict:
     
     if not folder_id:
         # Try to find existing folder
-        print(f"[Agent] Skills folder ID missing. Searching for 'KOTO_SKILLS'...", file=sys.stderr)
-        res = search_drive("KOTO_SKILLS")
+        print(f"[Agent] Skills folder ID missing. Searching for 'MORA_SKILLS'...", file=sys.stderr)
+        res = search_drive("MORA_SKILLS")
         folders = [f for f in res.get("files", []) if f.get("mimeType") == "application/vnd.google-apps.folder"]
         
         if folders:
             folder_id = folders[0]["id"]
         else:
             # Create if not found
-            print(f"[Agent] Creating 'KOTO_SKILLS' folder...", file=sys.stderr)
-            new_folder = create_drive_folder("KOTO_SKILLS")
+            print(f"[Agent] Creating 'MORA_SKILLS' folder...", file=sys.stderr)
+            new_folder = create_drive_folder("MORA_SKILLS")
             folder_id = new_folder.get("id")
             
         if folder_id:
@@ -129,7 +124,7 @@ def load_skill(skill_name: str, client_config=None) -> dict:
     files = res.get("files", [])
     
     if not files:
-        return {"error": f"スキル「{skill_name}」が見つかりませんでした。KOTO_SKILLSフォルダ内にファイルを作成してください。"}
+        return {"error": f"スキル「{skill_name}」が見つかりませんでした。MORA_SKILLSフォルダ内にファイルを作成してください。"}
     
     # Read the first match
     file_id = files[0]["id"]
@@ -148,7 +143,7 @@ def load_skill(skill_name: str, client_config=None) -> dict:
 
 def save_skill(skill_name: str, instructions: str, description: str = "", client_config=None) -> dict:
     """
-    Save a new skill (prompt) to the KOTO_SKILLS folder.
+    Save a new skill (prompt) to the MORA_SKILLS folder.
     """
     from utils.sheets_config import load_config, save_config
     from tools.google_ops import search_drive, create_drive_folder, create_google_doc
@@ -158,12 +153,12 @@ def save_skill(skill_name: str, instructions: str, description: str = "", client
     
     # 1. Ensure folder exists (duplicated from load_skill for safety, should refactor later)
     if not folder_id:
-        res = search_drive("KOTO_SKILLS")
+        res = search_drive("MORA_SKILLS")
         folders = [f for f in res.get("files", []) if f.get("mimeType") == "application/vnd.google-apps.folder"]
         if folders:
             folder_id = folders[0]["id"]
         else:
-            new_folder = create_drive_folder("KOTO_SKILLS")
+            new_folder = create_drive_folder("MORA_SKILLS")
             folder_id = new_folder.get("id")
         if folder_id:
             config["skills_folder_id"] = folder_id
@@ -199,7 +194,7 @@ def save_skill(skill_name: str, instructions: str, description: str = "", client
 
 
 # Map tool names to functions
-KOTO_TOOLS = {
+MORA_TOOLS = {
     'calculate': calculate,
     'calculate_date': calculate_date,
     'search_drive': search_drive,
@@ -222,8 +217,8 @@ KOTO_TOOLS = {
     'find_free_slots': find_free_slots,
     'list_tasks': list_tasks,
     'add_task': add_task,
-    'list_notion_tasks': list_notion_tasks,
-    'create_notion_task': create_notion_task,
+    'search_notion': lambda query=None, database_id=None: list_notion_tasks(database_id or _resolve_notion_db_id(client_config)),
+    'add_notion_task': lambda title, content=None, due_date=None, status=None, database_id=None: create_notion_task(database_id or _resolve_notion_db_id(client_config), title, due_date, status, content=content),
     'update_notion_task': update_notion_task,
     'get_notion_db_schema': get_notion_db_schema,
     'complete_notion_task': lambda page_id, new_status: update_notion_task(page_id, new_status, None),
@@ -274,11 +269,16 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, 
     """
     Main Agent Logic using Google Gemini API directly.
     """
-    global _current_user_id
-    _current_user_id = user_id
-    
+    # T05: set_reminderをクロージャとして定義（グローバル変数不使用）
+    def set_reminder(location: str) -> dict:
+        from utils.user_db import register_user
+        return register_user(user_id, location)
+
+
     if not GEMINI_API_KEY:
         return "エラー: GEMINI_API_KEYが設定されていません。"
+
+    client_id = client_config.get('client_id', 'default') if client_config else 'default'
 
     from utils.vector_store import save_conversation, get_user_profile, get_context_summary
     from utils.agent_log import is_debug_mode, set_debug_mode, add_log, format_log_for_line
@@ -296,12 +296,12 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, 
         # 1. Build System Prompt & History
         # IMPORTANT: Load context summary BEFORE adding current message to history/vector store
         # to avoid self-referencing mirroring bugs.
-        memory_text = get_context_summary(user_id, user_message)
-        
+        memory_text = get_context_summary(user_id, user_message, client_id=client_id)
+
         # Now safe to add to temporary history for the current request
         add_message(user_id, "user", user_message)
         # Fix RAG: Store user message into Pinecone as well to enable bidirectional memory retrieval
-        save_conversation(user_id, "user", user_message)
+        save_conversation(user_id, "user", user_message, client_id=client_id)
         
         history_data = get_user_history(user_id)
         
@@ -309,13 +309,13 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, 
         spreadsheet_id = client_config.get('spreadsheet_id') if client_config else None
         config = load_config(spreadsheet_id)
         
-        personality = config.get("koto_personality", "明るくて元気なAI秘書")
-        master_prompt = config.get("koto_master_prompt", "")
+        personality = config.get("mora_personality", "明るくて元気なAI秘書")
+        master_prompt = config.get("mora_master_prompt", "")
         # Fix: Use JST explicitly (Railway runs in UTC)
         jst = datetime.timezone(datetime.timedelta(hours=9))
         now_str = datetime.datetime.now(jst).strftime('%Y-%m-%d %H:%M:%S (%A)')
         
-        user_data = get_user_profile(user_id)
+        user_data = get_user_profile(user_id, client_id=client_id)
         # Safety: Profiler may rarely save a list instead of dict
         if not isinstance(user_data, dict):
             user_data = {}
@@ -396,7 +396,10 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, 
         )
 
         # Manual Tool Execution Loop
-        # FunctionDeclaration-based tools require manual dispatch via KOTO_TOOLS dict
+        # T05: リクエストごとにset_reminderクロージャを含むローカルツール辞書を生成
+        local_tools = {**MORA_TOOLS, 'set_reminder': set_reminder}
+
+        # FunctionDeclaration-based tools require manual dispatch via local_tools dict
         response = client.models.generate_content(
             model="gemini-3-flash-preview",
             contents=contents,
@@ -423,9 +426,9 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, 
                 
                 print(f"[Agent] Executing tool: {fn_name} with {fn_args}", file=sys.stderr)
                 
-                if fn_name in KOTO_TOOLS:
+                if fn_name in local_tools:
                     try:
-                        result = KOTO_TOOLS[fn_name](**fn_args)
+                        result = local_tools[fn_name](**fn_args)
                     except Exception as tool_err:
                         result = {"error": f"Tool execution failed: {str(tool_err)}"}
                         print(f"[Agent] Tool error ({fn_name}): {tool_err}", file=sys.stderr)
@@ -478,7 +481,23 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, 
         
         if final_text:
             add_message(user_id, "model", final_text)
-            save_conversation(user_id, "model", final_text)
+            save_conversation(user_id, "model", final_text, client_id=client_id)
+
+            # T19: エスカレーション検知 — 「井崎に直接ご確認ください」を含む場合に通知
+            from utils.escalation import should_escalate, save_and_notify
+            if should_escalate(final_text):
+                save_and_notify(client_id, user_id, user_message, final_text)
+
+            # T20: 問い合わせ記録
+            from utils.inquiry_log import log_inquiry
+            log_inquiry(client_id, user_id, user_message, final_text)
+
+            # T21: フィードバック記録（100文字超の実質的な回答のみ）
+            # 通知は毎回ではなく管理画面 or 日次ダイジェストで確認する方式
+            if len(final_text) > 100 and not should_escalate(final_text):
+                from utils.feedback import save_response_for_feedback
+                save_response_for_feedback(client_id, user_id, user_message, final_text)
+
             return final_text
         
         return "申し訳ありません、うまく応答を生成できませんでした。"
@@ -487,4 +506,4 @@ def get_gemini_response(user_id, user_message, image_data=None, mime_type=None, 
         print(f"Gemini API Error: {e}", file=sys.stderr)
         import traceback
         traceback.print_exc(file=sys.stderr)
-        return f"エラーが発生しました: {e}"
+        return "ただいま混み合っております。しばらくしてから再度お試しください。"
