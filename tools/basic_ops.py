@@ -150,32 +150,43 @@ def read_pdf_from_drive(file_id):
         return {"error": f"PDF読み取りエラー: {str(e)}"}
 
 
-def search_and_read_pdf(query):
-    """Search Drive for PDF and read it"""
+def search_and_read_pdf(query, file_id=None):
+    """Search Drive for PDF and read it. If file_id is provided, reads it directly."""
     try:
         creds = get_google_credentials()
         if not creds:
             return {"error": "Google認証エラー"}
-        
+
         drive_service = build('drive', 'v3', credentials=creds)
-        
-        # Search for PDF
+
+        if file_id:
+            # Direct read by file_id
+            try:
+                file_info = drive_service.files().get(fileId=file_id, fields="id, name").execute()
+                pdf_result = read_pdf_from_drive(file_id)
+                if pdf_result.get('success'):
+                    pdf_result['filename'] = file_info.get('name', file_id)
+                return pdf_result
+            except Exception as e:
+                return {"error": f"ファイルID '{file_id}' の読み取りエラー: {str(e)}"}
+
+        # Search for PDF by query
         results = drive_service.files().list(
             q=f"name contains '{query}' and mimeType='application/pdf' and trashed=false",
             pageSize=1,
             fields="files(id, name)"
         ).execute()
-        
+
         files = results.get('files', [])
         if not files:
             return {"error": f"'{query}'に該当するPDFが見つかりませんでした"}
-        
+
         file_info = files[0]
         pdf_result = read_pdf_from_drive(file_info['id'])
-        
+
         if pdf_result.get('success'):
             pdf_result['filename'] = file_info['name']
-        
+
         return pdf_result
     except Exception as e:
         return {"error": str(e)}
