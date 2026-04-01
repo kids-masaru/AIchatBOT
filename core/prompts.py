@@ -60,7 +60,7 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "file_id": {"type": "string", "description": "PDFのファイルID"},
-                "query": {"type": "抽出したい情報のキーワード"}
+                "query": {"type": "string", "description": "抽出したい情報のキーワード"}
             },
             "required": ["file_id", "query"]
         }
