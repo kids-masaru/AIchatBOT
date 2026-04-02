@@ -551,27 +551,70 @@ def process_batched_messages(user_id, tasks, client_config):
     """Process a batch of queued messages for a user with client context"""
     try:
         token = client_config['line_channel_access_token']
-        # ... (implementation simplified for now, will refine in next step)
         combined_text = ""
         reply_tokens = []
-        
-        for task in tasks:
-            if task['type'] == 'text':
-                combined_text += f"\nユーザー: {task['text']}\n"
-            if task.get('reply_token'):
-                reply_tokens.append(task['reply_token'])
+        last_image_data = None
+        last_image_mime = None
 
-        if not combined_text: return
+        for task in tasks:
+            message_type = task.get('type')
+            reply_token = task.get('reply_token')
+            message_id = task.get('message_id')
+            filename = task.get('filename')
+
+            if reply_token and reply_token not in reply_tokens:
+                reply_tokens.append(reply_token)
+
+            if message_type == 'text':
+                combined_text += f"\nユーザー: {task['text']}\n"
+
+            elif message_type == 'image':
+                content = get_line_message_content(message_id, token)
+                if content:
+                    last_image_data = content
+                    last_image_mime = 'image/jpeg'
+                    combined_text += "\n【画像が送られました。内容を確認して自然に返答してください。】\n"
+                else:
+                    print(f"Image download failed for {message_id}", file=sys.stderr)
+
+            elif message_type == 'file':
+                content = get_line_message_content(message_id, token)
+                if content:
+                    import datetime, mimetypes
+                    if not filename:
+                        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                        filename = f"line_{timestamp}.dat"
+                    mime, _ = mimetypes.guess_type(filename) if filename else (None, None)
+                    if not mime:
+                        mime = 'application/octet-stream'
+                    from tools.google_ops import upload_file_to_drive
+                    result = upload_file_to_drive(filename, content, mime_type=mime)
+                    if result.get("success"):
+                        combined_text += f"\n【ファイル受信】ファイル名: {filename} (Drive保存済み)\n"
+                    else:
+                        combined_text += f"\n【ファイル受信失敗】{filename}\n"
+
+        if not combined_text.strip() and last_image_data is None:
+            return
+
+        if not combined_text.strip():
+            combined_text = "【画像が送られました。内容を確認して自然に返答してください。】"
 
         # Call AI
-        ai_response = get_gemini_response(user_id, combined_text.strip(), client_config=client_config)
-        
+        ai_response = get_gemini_response(
+            user_id,
+            combined_text.strip(),
+            image_data=last_image_data,
+            mime_type=last_image_mime,
+            client_config=client_config
+        )
+
         # Reply
         if reply_tokens:
             reply_message(reply_tokens[-1], ai_response, token)
         else:
             push_message(user_id, ai_response, token)
-            
+
     except Exception as e:
         print(f"Batch processing error: {e}", file=sys.stderr)
 
