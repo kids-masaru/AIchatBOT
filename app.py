@@ -28,6 +28,31 @@ from core.clients import registry
 
 app = Flask(__name__)
 
+# --- Pause/Resume mechanism ---
+import time as _time
+_paused_clients = {}  # {client_id: expire_timestamp}
+PAUSE_DURATION = 1800  # 30 minutes auto-resume
+
+def is_client_paused(client_id):
+    """Check if Mora is paused for a client"""
+    if client_id not in _paused_clients:
+        return False
+    if _time.time() > _paused_clients[client_id]:
+        del _paused_clients[client_id]
+        return False
+    return True
+
+def pause_client(client_id, duration=PAUSE_DURATION):
+    """Pause Mora for a client"""
+    _paused_clients[client_id] = _time.time() + duration
+    print(f"Mora PAUSED for client '{client_id}' ({duration}s)", file=sys.stderr)
+
+def resume_client(client_id):
+    """Resume Mora for a client"""
+    _paused_clients.pop(client_id, None)
+    print(f"Mora RESUMED for client '{client_id}'", file=sys.stderr)
+
+
 def _check_admin_auth(req) -> bool:
     """管理者パスワード認証（クエリパラメータ ?pw= またはリクエストボディの pw フィールド）"""
     password = os.environ.get('ADMIN_PASSWORD', 'admin123')
@@ -510,28 +535,50 @@ def process_line_event(event, client_config):
     event_type = event.get('type')
     source = event.get('source', {})
     user_id = source.get('userId', 'unknown')
-    
+    client_id = client_config.get('client_id', 'default')
+
     if event_type == 'message':
         message = event.get('message', {})
         message_type = message.get('type')
         reply_token = event.get('replyToken')
-        
+        text = message.get('text', '').strip()
+        token = client_config.get('line_channel_access_token', '')
+
+        # --- Admin commands (from Izaki) ---
+        izaki_id = os.environ.get('IZAKI_LINE_USER_ID', '')
+        if user_id == izaki_id and message_type == 'text':
+            if text in ['停止', 'stop', 'ストップ']:
+                pause_client(client_id)
+                if reply_token:
+                    reply_message(reply_token, f"⏸ Mora一時停止しました（{client_id}）\n30分後に自動復帰します\n\n「再開」で手動復帰できます", token)
+                return
+            elif text in ['再開', 'resume', '再開する']:
+                resume_client(client_id)
+                if reply_token:
+                    reply_message(reply_token, f"▶ Mora再開しました（{client_id}）", token)
+                return
+
+        # --- Skip if paused ---
+        if is_client_paused(client_id):
+            print(f"Mora is PAUSED for {client_id}, skipping message from {user_id[:8]}", file=sys.stderr)
+            return
+
         # Enqueue with client context
         task = {
-            'client_id': client_config.get('client_id', 'default'),
+            'client_id': client_id,
             'type': message_type,
             'reply_token': reply_token,
             'message_id': message.get('id'),
             'text': message.get('text', ''),
             'filename': message.get('fileName')
         }
-        
+
         enqueue_message(user_id, task)
-        
+
         # Process queue in background
         def run_async():
             process_queue_for_user(user_id, lambda uid, tasks: process_batched_messages(uid, tasks, client_config))
-        
+
         threading.Thread(target=run_async, daemon=True).start()
         
     elif event_type == 'follow':
